@@ -1,38 +1,37 @@
-# Travel MCP Gateway
+# 出行 MCP 统一网关
 
-**Languages:** [中文](README_ZH.md)
+**语言:** [English](README.en.md)
 
-A single MCP server that aggregates travel-related downstream MCPs in China: **train** (12306), **flight** (FlightTicketMCP), **map** (official Amap MCP), and **taxi fare estimate** (DiDi). Clients connect to one stdio gateway; providers are grouped under fixed domains: `train`, `flight`, `map`, `taxi`.
+面向出行场景的 **单一 MCP 入口**：在一条 stdio 连接上聚合 **火车**（12306）、**航班**（FlightTicketMCP）、**地图**（官方高德 MCP）与 **打车费用预估**（滴滴）。业务域固定为 `train`、`flight`、`map`、`taxi`，便于继续扩展。
 
-## Features
+## 架构概览
 
-- One MCP entrypoint over **stdio** (Cursor, Claude Desktop, OpenCode, and similar clients)
-- **Flight** search (default `auto`): tries **Ctrip** flight listings first (web scrape); if that fails or scrape dependencies are missing, it can fall back to **VariFlight** when `VARIFLIGHT_API_KEY` is set in `FlightTicketMCP/.env`
-- Add new providers by domain registries under `src/domains/` (see [docs/extending.md](docs/extending.md))
+![出行 MCP 统一网关 总体架构](docs/assets/workflow.png)
 
-## Prerequisites
+## 功能概要
 
-- **Node.js** (npm)
-- **Python** environment for `FlightTicketMCP` (subprocess)
+- **统一网关**：客户端只需拉起 **一个** stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低多进程与多配置心智负担。
+- **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
+- **排障辅助**：提供 OpenCode 项目级 **error-processing** skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴、VariFlight 等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
 
-## Let an Agent Install It
+## 让 Agent 安装
 
-Copy this into your LLM agent session (Cursor, Claude Desktop, OpenCode, or similar). The agent will install dependencies, configure keys, build the project, and prepare MCP client config:
+把下面内容复制给你的 LLM Agent（Cursor、Claude Desktop、OpenCode 等），让它按指南完成依赖安装、密钥配置、构建验证和 MCP 客户端配置：
 
 ```text
 Install and configure Travel MCP Gateway by following the instructions here:
-https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.md
+https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.zh.md
 ```
 
-You can also read the [Agent Installation Guide](docs/agent-install.md).
+也可以直接阅读 [Agent 安装指南](docs/agent-install.zh.md)。
 
-## Quick start
+## 快速开始
 
 ```bash
 npm install
 ```
 
-Install flight provider dependencies (example with `uv`):
+安装航班子项目依赖（示例使用 `uv`）：
 
 ```bash
 cd FlightTicketMCP
@@ -40,9 +39,9 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
-Or with pip: `pip install -r requirements.txt` or `pip install -e .`
+或使用 `pip install -r requirements.txt` / `pip install -e .`。
 
-Create `.env` from the template, fill in your keys, then:
+从模板生成 `.env`，填写密钥，然后：
 
 ```bash
 cp .env.example .env
@@ -53,19 +52,19 @@ npm run build
 node build/index.js
 ```
 
-## Environment variables
+## 环境变量
 
-| Variable | Purpose |
-|----------|---------|
-| `AMAP_MAPS_API_KEY` | Obtain a key from [Amap MCP Server](https://lbs.amap.com/api/mcp-server/summary) for `map/amap` |
-| `DIDI_MCP_KEY` | Obtain a key from [DiDi MCP](https://mcp.didichuxing.com/) for `taxi/didi` (place search + fare estimate) |
-| `FLIGHT_MCP_PYTHON_COMMAND` | Python executable for FlightTicketMCP (default: `python`) |
-| `TRAIN_12306_ENTRY` | Optional path to 12306 MCP entry script |
-| `FLIGHT_MCP_PROJECT_ROOT` | Optional path to `FlightTicketMCP` root |
+| 变量 | 说明 |
+|------|------|
+| `AMAP_MAPS_API_KEY` | 于 [高德 MCP Server](https://lbs.amap.com/api/mcp-server/summary) 处申请 Key，用于 `map/amap` |
+| `DIDI_MCP_KEY` | 于 [滴滴 MCP](https://mcp.didichuxing.com/) 处申请 Key，用于 `taxi/didi`（地点搜索 + 费用预估） |
+| `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（默认 `python`） |
+| `TRAIN_12306_ENTRY` | 可选，12306 MCP 入口脚本路径 |
+| `FLIGHT_MCP_PROJECT_ROOT` | 可选，`FlightTicketMCP` 根目录 |
 
-Additional flight-related variables (including `VARIFLIGHT_API_KEY` for the VariFlight fallback) are documented in `FlightTicketMCP/.env.example`; apply for access via [VariFlight MCP](https://mcp.variflight.com/).
+航班相关补充变量（含 VariFlight 备选所需的 `VARIFLIGHT_API_KEY`）见 `FlightTicketMCP/.env.example`，申请方式参考 [VariFlight MCP](https://mcp.variflight.com/)。
 
-## MCP client configuration
+## MCP 客户端配置示例
 
 ```json
 {
@@ -83,26 +82,53 @@ Additional flight-related variables (including `VARIFLIGHT_API_KEY` for the Vari
 }
 ```
 
-Adjust `args` to an absolute path if your client does not use the repo root as cwd.
+若客户端工作目录不是仓库根目录，请将 `args` 改为 `build/index.js` 的绝对路径。
 
 ## OpenCode
 
-Example: [.opencode/opencode.json](.opencode/opencode.json). Replace placeholders with your real keys.
+示例文件：[.opencode/opencode.json](.opencode/opencode.json)，将占位符替换为真实密钥即可。
 
-The project-level error-processing skill lives at [.opencode/skills/error-processing/SKILL.md](.opencode/skills/error-processing/SKILL.md), with MCP troubleshooting references in [.opencode/skills/error-processing/mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json).
+项目级错误处理 skill 位于 [.opencode/skills/error-processing/SKILL.md](.opencode/skills/error-processing/SKILL.md)，MCP 排障参考索引位于 [.opencode/skills/error-processing/mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json)。
 
-## Other: DiDi taxi fare estimate chain
+## 其他
 
-For fare estimation you **must** call tools in this order:
+### 工具命名约定
+
+聚合后的工具名形如：`{domain}_{providerName}_{toolName}`，例如 `train_12306_get_tickets`、`map_amap_maps_geo`、`taxi_didi_taxi_estimate`。下游可为本地 **stdio** 子进程或远程 **streamable-http**，由各 `provider.ts` 声明。
+
+### 滴滴打车费用预估链路
+
+费用预估按顺序调用：
 
 1. `taxi_didi_maps_textsearch`
 2. `taxi_didi_taxi_estimate`
 
-Coordinates for `estimate` must come from DiDi `maps_textsearch` (keys and API details: [DiDi MCP](https://mcp.didichuxing.com/)). **Do not use coordinates returned by the Amap MCP.**
+`estimate` 使用的经纬度须来自滴滴 `maps_textsearch`（密钥与接口说明见 [滴滴 MCP](https://mcp.didichuxing.com/)）。不使用高德 MCP 返回的坐标。
 
-For geocoding, POI, routing, weather, and other **non–fare-estimate** map tasks, prefer **`map/amap`**. See [Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary).
+对于地理编码、POI、路径、天气等非打车预估场景优先使用 `map/amap`。参考：[高德 MCP Server 概述](https://lbs.amap.com/api/mcp-server/summary)。
 
-## Documentation
+### 航班查询
 
-- **Agent installation guide:** [docs/agent-install.md](docs/agent-install.md) (English) · [docs/agent-install.zh.md](docs/agent-install.zh.md) (中文)
-- **Tool list, layout, provider extension, OpenCode, and error-processing skill:** [docs/extending.md](docs/extending.md) (English) · [docs/extending.zh.md](docs/extending.zh.md) (中文)
+航班查询（默认 `auto`）：优先抓取携程网页航班列表；失败或缺少抓取依赖时，若已在 `FlightTicketMCP/.env` 配置 `VARIFLIGHT_API_KEY`，可回退到 VariFlight MCP
+
+### Gateway MCP Server 与模型上下文的关系
+
+网关进程启动时会遍历各业务域的 provider，调用 `connectAndRegisterProvider`，把已成功连接且按规则保留的下游工具，统一注册到同一个 MCP Server（见 `src/index.ts`）
+
+若某个下游连接失败，该 provider 的工具不会出现在清单里（启动日志会有 `[gateway] failed to connect provider`）。
+
+## 文档
+
+- **Agent 安装指南：** [docs/agent-install.zh.md](docs/agent-install.zh.md)（中文）· [docs/agent-install.md](docs/agent-install.md)（English）
+- **完整工具列表、目录约定、如何新增子 MCP、OpenCode 与错误处理 skill：** [docs/extending.zh.md](docs/extending.zh.md)（中文）· [docs/extending.md](docs/extending.md)（English）
+
+## 致谢
+
+本仓库在能力与设计上参考或继承了下列开源项目与公开材料（上游许可证以其各自仓库为准）：
+
+- **仓库**
+  - [12306-mcp](https://github.com/Joooook/12306-mcp)
+  - [FlightTicketMCP](https://github.com/xiaonieli7/FlightTicketMCP)
+- **其他参考材料**
+  - [哔哩哔哩 · BV1xFhrzpEDd](https://www.bilibili.com/video/BV1xFhrzpEDd/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)
+  - [哔哩哔哩 · BV1AoYZzKEvb](https://www.bilibili.com/video/BV1AoYZzKEvb/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)

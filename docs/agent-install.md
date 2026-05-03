@@ -2,18 +2,26 @@
 
 This guide is for LLM agents. The goal is to install dependencies, configure environment files, build the Travel MCP Gateway, and prepare MCP client configuration for the user.
 
+![Unified Travel MCP Gateway overview](assets/workflow.png)
+
 ## Questions for the user
 
-Before changing anything, ask the user for:
+Ask for everything below **before** making changes. **Never paste live secrets** into chat. Do **not** commit `.env`, logs, or machine-local paths.
 
-1. Whether Node.js and npm are installed.
-2. Whether Python is installed.
-3. Whether to use `uv` for `FlightTicketMCP` dependencies; if not available, use `pip`.
-4. Amap key: `AMAP_MAPS_API_KEY`.
-5. DiDi key: `DIDI_MCP_KEY`.
-6. Optional VariFlight key: `VARIFLIGHT_API_KEY`, used as a fallback flight data source.
+### Runtimes (guide installs when missing)
 
-Do not print real secrets in chat. Do not commit `.env`, logs, or machine-specific absolute paths.
+1. **Node.js and npm**: From the repo root, try `node --version` and `npm --version`. If either fails, ask the user to install **Node.js LTS** from **[https://nodejs.org/](https://nodejs.org/)** (npm ships with it), then **restart the terminal** and re-run these checks.
+2. **Python**: Try `python --version`, `python3 --version`, or on Windows `py -V`. If unavailable, ask the user to install Python from **[https://www.python.org/downloads/](https://www.python.org/downloads/)** (enable **Add python.exe to PATH** on Windows), restart the terminal, and verify again.
+
+### Python dependency tooling
+
+3. **Prefer uv**: Recommend **[uv](https://docs.astral.sh/uv/)** for the `FlightTicketMCP` virtual environment—it resolves installs quickly and keeps environments reproducible. Help install uv if needed; otherwise fall back to `pip install -r requirements.txt` or `pip install -e .`.
+
+### API keys (help users obtain keys when absent)
+
+4. **`AMAP_MAPS_API_KEY` (Amap maps MCP)**: If missing, point users to **[Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary)**. Reference walk-through video (Chinese): [Bilibili · Amap MCP (BV1qwZqYJEUG)](https://www.bilibili.com/video/BV1qwZqYJEUG/?spm_id_from=333.337.search-card.all.click&vd_source=142b6836e6a2c5bbefbe6f7d373be844).
+5. **`DIDI_MCP_KEY` (DiDi MCP)**: If missing, point users to **[DiDi MCP](https://mcp.didichuxing.com/)**. Reference walk-through video (Chinese): [Bilibili · DiDi MCP (BV1vpb7zaECv)](https://www.bilibili.com/video/BV1vpb7zaECv/?spm_id_from=333.337.search-card.all.click&vd_source=142b6836e6a2c5bbefbe6f7d373be844).
+6. **`VARIFLIGHT_API_KEY` (optional flight fallback)**: If VariFlight fallback is desired but no key exists, ask users to apply via **[VariFlight MCP](https://mcp.variflight.com/)**. Leaving it unset still allows the Ctrip-first path described in FlightTicketMCP.
 
 ## 1. Check the runtime
 
@@ -31,7 +39,7 @@ If the user wants `uv`:
 uv --version
 ```
 
-If Node.js, npm, or Python is missing, ask the user to install it before continuing.
+If Node.js, npm, or Python is missing, **do not guess paths**: follow the installation guidance in **Questions for the user**, ask the user to restart the terminal, then rerun this section’s checks.
 
 ## 2. Install root dependencies
 
@@ -41,7 +49,7 @@ npm install
 
 ## 3. Install flight provider dependencies
 
-Prefer `uv`:
+Stay aligned with **Prefer uv** above: **try uv first**; fall back to pip only when the user insists.
 
 ```bash
 cd FlightTicketMCP
