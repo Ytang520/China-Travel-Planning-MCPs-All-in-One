@@ -2,7 +2,7 @@
 
 **语言:** [English](README.en.md)
 
-面向出行场景的 **单一 MCP 入口**：在一条 stdio 连接上聚合 **火车**（12306）、**航班**（FlightTicketMCP）、**地图**（官方高德 MCP）与 **打车费用预估**（滴滴）。业务域固定为 `train`、`flight`、`map`、`taxi`，便于继续扩展。
+面向出行场景的单一 MCP 入口：在一条 stdio 连接上聚合 **火车**（12306）、**航班**（FlightTicketMCP）、**地图**（官方高德 MCP）与 **打车费用预估**（滴滴）。业务域固定为 `train`、`flight`、`map`、`taxi`，便于继续扩展。
 
 ## 架构概览
 
@@ -10,13 +10,13 @@
 
 ## 功能概要
 
-- **统一网关**：客户端只需拉起 **一个** stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低多进程与多配置心智负担。
+- **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低多进程与多配置心智负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
-- **排障辅助**：提供 OpenCode 项目级 **error-processing** skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴、VariFlight 等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
+- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴、VariFlight 等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
 
 ## 让 Agent 安装
 
-把下面内容复制给你的 LLM Agent（Cursor、Claude Desktop、OpenCode 等），让它按指南完成依赖安装、密钥配置、构建验证和 MCP 客户端配置：
+把下面内容复制给你的 LLM Agent（Cursor、Claude Code、OpenCode 等），让它按指南完成依赖安装、密钥配置、构建验证和 MCP 客户端配置：
 
 ```text
 Install and configure Travel MCP Gateway by following the instructions here:
@@ -66,6 +66,10 @@ node build/index.js
 
 ## MCP 客户端配置示例
 
+按宿主拆分的可复制示例见 **[docs/mcp-client-examples/README.md](docs/mcp-client-examples/README.md)**（Cursor、Claude Code、OpenCode）。
+
+以下为与 **Cursor** 等项目级 **`mcpServers`** 配置兼容的最小片段（假定宿主将 MCP 子进程的 cwd 设为仓库根；否则请将 `args` 改为 `build/index.js` 的绝对路径）：
+
 ```json
 {
   "mcpServers": {
@@ -75,20 +79,14 @@ node build/index.js
       "env": {
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
-        "FLIGHT_MCP_PYTHON_COMMAND": "python"
+        "FLIGHT_MCP_PYTHON_COMMAND": "python",
+        "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
+        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
       }
     }
   }
 }
 ```
-
-若客户端工作目录不是仓库根目录，请将 `args` 改为 `build/index.js` 的绝对路径。
-
-## OpenCode
-
-示例文件：[.opencode/opencode.json](.opencode/opencode.json)，将占位符替换为真实密钥即可。
-
-项目级错误处理 skill 位于 [.opencode/skills/error-processing/SKILL.md](.opencode/skills/error-processing/SKILL.md)，MCP 排障参考索引位于 [.opencode/skills/error-processing/mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json)。
 
 ## 其他
 
@@ -117,11 +115,6 @@ node build/index.js
 
 若某个下游连接失败，该 provider 的工具不会出现在清单里（启动日志会有 `[gateway] failed to connect provider`）。
 
-## 文档
-
-- **Agent 安装指南：** [docs/agent-install.zh.md](docs/agent-install.zh.md)（中文）· [docs/agent-install.md](docs/agent-install.md)（English）
-- **完整工具列表、目录约定、如何新增子 MCP、OpenCode 与错误处理 skill：** [docs/extending.zh.md](docs/extending.zh.md)（中文）· [docs/extending.md](docs/extending.md)（English）
-
 ## 致谢
 
 本仓库在能力与设计上参考或继承了下列开源项目与公开材料（上游许可证以其各自仓库为准）：
@@ -130,5 +123,5 @@ node build/index.js
   - [12306-mcp](https://github.com/Joooook/12306-mcp)
   - [FlightTicketMCP](https://github.com/xiaonieli7/FlightTicketMCP)
 - **其他参考材料**
-  - [哔哩哔哩 · BV1xFhrzpEDd](https://www.bilibili.com/video/BV1xFhrzpEDd/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)
-  - [哔哩哔哩 · BV1AoYZzKEvb](https://www.bilibili.com/video/BV1AoYZzKEvb/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)
+  - [哔哩哔哩 · BV1xFhrzpEDd](https://www.bilibili.com/video/BV1xFhrzpEDd/)
+  - [哔哩哔哩 · BV1AoYZzKEvb](https://www.bilibili.com/video/BV1AoYZzKEvb/)

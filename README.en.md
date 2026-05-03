@@ -10,7 +10,7 @@ English README for **[出行 MCP 统一网关](README.md)** — a single **stdio
 
 ## Feature overview
 
-- **Single gateway**: Run **one** MCP server process and reach train ticketing (12306), flights (FlightTicketMCP), maps (Amap MCP), and DiDi fare tools—fewer processes and configs for desktop hosts such as Cursor, Claude Desktop, or OpenCode.
+- **Single gateway**: Run **one** MCP server process and reach train ticketing (12306), flights (FlightTicketMCP), maps (Amap MCP), and DiDi fare tools—fewer processes and configs for desktop hosts such as Cursor, Claude Code, or OpenCode.
 - **Easy extension**: Downstream integrations register under fixed domains via each domain’s `registry.ts`; add providers under `src/domains/` (see [docs/extending.md](docs/extending.md)).
 - **Operations-friendly troubleshooting**: The OpenCode **error-processing** skill ([SKILL.md](.opencode/skills/error-processing/SKILL.md)) works with [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) to semantically match public docs for Amap, DiDi, VariFlight, and related failures—without ever dumping secrets—covering MCP connectivity, auth, schemas, and response-shape issues.
 
@@ -66,6 +66,10 @@ Additional flight-related variables (including `VARIFLIGHT_API_KEY` for the Vari
 
 ## MCP client configuration
 
+Host-specific copy/paste examples live under **[docs/mcp-client-examples/README.md](docs/mcp-client-examples/README.md)** (Cursor, Claude Code, OpenCode).
+
+Minimal **`mcpServers`** snippet compatible with **Cursor** when the MCP subprocess cwd is the repo root—otherwise use an absolute path for `build/index.js`:
+
 ```json
 {
   "mcpServers": {
@@ -75,14 +79,14 @@ Additional flight-related variables (including `VARIFLIGHT_API_KEY` for the Vari
       "env": {
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
-        "FLIGHT_MCP_PYTHON_COMMAND": "python"
+        "FLIGHT_MCP_PYTHON_COMMAND": "python",
+        "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
+        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
       }
     }
   }
 }
 ```
-
-Adjust `args` to an absolute path if your client does not use the repo root as cwd.
 
 ## OpenCode
 
@@ -128,5 +132,5 @@ This project builds on or references the following upstream repositories and mat
   - [12306-mcp](https://github.com/Joooook/12306-mcp)
   - [FlightTicketMCP](https://github.com/xiaonieli7/FlightTicketMCP)
 - **Other reference materials**
-  - [Bilibili · BV1xFhrzpEDd](https://www.bilibili.com/video/BV1xFhrzpEDd/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)
-  - [Bilibili · BV1AoYZzKEvb](https://www.bilibili.com/video/BV1AoYZzKEvb/?spm_id_from=333.1391.0.0&vd_source=142b6836e6a2c5bbefbe6f7d373be844)
+  - [Bilibili · BV1xFhrzpEDd](https://www.bilibili.com/video/BV1xFhrzpEDd/)
+  - [Bilibili · BV1AoYZzKEvb](https://www.bilibili.com/video/BV1AoYZzKEvb/)

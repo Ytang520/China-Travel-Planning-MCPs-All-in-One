@@ -1,0 +1,14 @@
+{
+  "travel-mcp-gateway": {
+    "type": "local",
+    "command": ["node", "./build/index.js"],
+    "enabled": true,
+    "environment": {
+      "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
+      "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
+      "FLIGHT_MCP_PYTHON_COMMAND": "python",
+      "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
+      "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
+    }
+  }
+}
