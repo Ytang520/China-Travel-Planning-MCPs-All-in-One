@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "references": [
+    {
+      "id": "amap",
+      "provider": "Amap MCP",
+      "domains": ["map", "route", "poi", "weather", "geocoding"],
+      "description": "高德地图 MCP，提供地点搜索、路径规划、天气、地理编码、专属地图、导航和打车唤端等出行位置服务能力。",
+      "triggers": ["AMAP_MAPS_API_KEY", "amap", "高德", "map/amap", "@amap/amap-maps-mcp-server"],
+      "urls": [
+        {
+          "label": "高德 MCP Server 概述",
+          "url": "https://lbs.amap.com/api/mcp-server/summary",
+          "usage": "用于确认高德 MCP 能力、Key 申请入口、工具能力范围、鉴权要求和接入方式。"
+        }
+      ]
+    },
+    {
+      "id": "didi",
+      "provider": "DiDi MCP",
+      "domains": ["taxi", "ride-hailing", "route"],
+      "description": "滴滴 MCP，提供出行打车、价格预估、订单流程、地图路线规划等能力，并区分 Beta、Pro、Pro+ 等服务版本。",
+      "triggers": ["DIDI_MCP_KEY", "didi", "滴滴", "taxi/didi", "mcp.didichuxing.com", "taxi_estimate"],
+      "urls": [
+        {
+          "label": "滴滴 MCP 服务",
+          "url": "https://mcp.didichuxing.com/",
+          "usage": "用于确认滴滴 MCP 服务版本、Key 激活入口、打车能力范围、路线规划能力和服务接入线索。"
+        }
+      ]
+    },
+    {
+      "id": "variflight",
+      "provider": "VariFlight MCP",
+      "domains": ["flight", "flight-status", "aviation"],
+      "description": "VariFlight MCP，面向航班查询、航班动态或航旅数据相关能力，可作为 FlightTicketMCP 航班数据源排障参考。",
+      "triggers": ["VARIFLIGHT_API_KEY", "variflight", "VariFlight", "飞常准", "flight", "flight_ticket_mcp_server"],
+      "urls": [
+        {
+          "label": "VariFlight MCP",
+          "url": "https://mcp.variflight.com/",
+          "usage": "用于核对 VariFlight MCP 入口、航班数据能力、鉴权或服务可用性相关线索。"
+        }
+      ]
+    },
+    {
+      "id": "12306",
+      "provider": "12306",
+      "domains": ["train", "railway", "ticket"],
+      "description": "中国铁路 12306 官方站点，提供火车票、车次、正晚点、起售时间、站点、退改签和铁路出行信息。",
+      "triggers": ["12306", "train", "铁路", "火车", "train/12306", "12306-mcp"],
+      "urls": [
+        {
+          "label": "中国铁路 12306",
+          "url": "https://www.12306.cn/index/",
+          "usage": "用于核对铁路出行官方信息、站点/车次相关行为、外部服务可用性和 12306 数据源异常线索。"
+        }
+      ]
+    },
+    {
+      "id": "ctrip-flight",
+      "provider": "Ctrip Flight",
+      "domains": ["flight", "ticket", "price", "schedule"],
+      "description": "携程航班查询页面，提供指定航线、日期、舱位、成人/儿童/婴儿参数下的机票查询示例。",
+      "triggers": ["ctrip", "携程", "Ctrip", "flights.ctrip.com", "机票", "航班查询"],
+      "urls": [
+        {
+          "label": "携程航班查询示例",
+          "url": "https://flights.ctrip.com/online/list/oneway-szx-sha?depdate=2026-05-04&cabin=y_s_c_f&adult=1&child=0&infant=0&source_module=recommend_card",
+          "usage": "用于对照航班查询页面参数、航线查询行为、价格或班期展示异常，以及 FlightTicketMCP 结果合理性。"
+        }
+      ]
+    }
+  ]
+}
