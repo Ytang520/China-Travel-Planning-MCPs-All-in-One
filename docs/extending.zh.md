@@ -1,8 +1,14 @@
 # 扩展与工具参考
 
-[返回主说明](../README_ZH.md)
+[返回主说明](../README.md)
 
 本文说明仓库结构、当前聚合保留的工具列表、如何新增子 MCP，以及网关辅助能力与安全约定。
+
+## 架构示意图
+
+![出行 MCP 统一网关 总体架构](assets/workflow.png)
+
+总体架构与「网关如何把工具暴露给模型」的说明见主文档 [README.md](../README.md) 中的「Gateway MCP Server 与模型上下文的关系」。
 
 ## 仓库布局
 
@@ -17,6 +23,8 @@
 │        ├─ SKILL.md
 │        └─ mcp-error-references.json
 ├─ docs/
+│  └─ assets/
+│     └─ workflow.png
 ├─ src/
 │  ├─ config.ts
 │  ├─ index.ts

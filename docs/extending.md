@@ -1,8 +1,14 @@
 # Extending and tool reference
 
-[Back to main README](../README.md)
+[Back to main README](../README.en.md)
 
 This document describes repository layout, retained aggregated tools, how to add a new sub-MCP, gateway helpers, and security notes.
+
+## Architecture diagram
+
+![Unified Travel MCP Gateway overview](assets/workflow.png)
+
+For how the gateway exposes tools to the model, see **Gateway MCP Server and model context** in [README.en.md](../README.en.md). The Chinese README [README.md](../README.md) has the same explanation under **Gateway MCP Server 与模型上下文的关系**.
 
 ## Repository layout
 
@@ -17,6 +23,8 @@ This document describes repository layout, retained aggregated tools, how to add
 │        ├─ SKILL.md
 │        └─ mcp-error-references.json
 ├─ docs/
+│  └─ assets/
+│     └─ workflow.png
 ├─ src/
 │  ├─ config.ts
 │  ├─ index.ts
