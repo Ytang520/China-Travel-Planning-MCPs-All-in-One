@@ -23,8 +23,9 @@ For how the gateway exposes tools to the model, see **Gateway MCP Server and mod
 │        ├─ SKILL.md
 │        └─ mcp-error-references.json
 ├─ docs/
-│  └─ assets/
-│     └─ workflow.png
+│  ├─ assets/
+│  │  └─ workflow.png
+│  └─ mcp-client-examples/
 ├─ src/
 │  ├─ config.ts
 │  ├─ index.ts
@@ -43,6 +44,7 @@ For how the gateway exposes tools to the model, see **Gateway MCP Server and mod
 Conventions:
 
 - `docs/agent-install.zh.md` / `docs/agent-install.md` are agent-facing installation and verification guides
+- `docs/mcp-client-examples/` hosts MCP JSON placeholders for Cursor, Claude Code, and OpenCode (see its `README.md`)
 - `.opencode/opencode.json` is the project-level OpenCode MCP configuration example
 - `.opencode/skills/error-processing/` stores the project-level error-processing skill and MCP troubleshooting reference index
 - Top-level domains are fixed: `train`, `flight`, `map`, `taxi`

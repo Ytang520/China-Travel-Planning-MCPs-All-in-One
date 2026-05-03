@@ -8,6 +8,13 @@ This guide is for LLM agents. The goal is to install dependencies, configure env
 
 Ask for everything below **before** making changes. **Never paste live secrets** into chat. Do **not** commit `.env`, logs, or machine-local paths.
 
+### MCP host (pick one before configuring clients)
+
+Ask where this MCP will run:
+
+- **OpenCode** / **Cursor** / **Claude Code** / **Other**
+- If **Other**: capture the **exact product name**, fetch its official MCP configuration docs (paths, root JSON keys, stdio command shape), then author config—**never guess** incompatible keys (for example, do not paste OpenCode `environment` into hosts that only accept `mcpServers[].env`).
+
 ### Runtimes (guide installs when missing)
 
 1. **Node.js and npm**: From the repo root, try `node --version` and `npm --version`. If either fails, ask the user to install **Node.js LTS** from **[https://nodejs.org/](https://nodejs.org/)** (npm ships with it), then **restart the terminal** and re-run these checks.
@@ -19,8 +26,8 @@ Ask for everything below **before** making changes. **Never paste live secrets**
 
 ### API keys (help users obtain keys when absent)
 
-4. **`AMAP_MAPS_API_KEY` (Amap maps MCP)**: If missing, point users to **[Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary)**. Reference walk-through video (Chinese): [Bilibili · Amap MCP (BV1qwZqYJEUG)](https://www.bilibili.com/video/BV1qwZqYJEUG/?spm_id_from=333.337.search-card.all.click&vd_source=142b6836e6a2c5bbefbe6f7d373be844).
-5. **`DIDI_MCP_KEY` (DiDi MCP)**: If missing, point users to **[DiDi MCP](https://mcp.didichuxing.com/)**. Reference walk-through video (Chinese): [Bilibili · DiDi MCP (BV1vpb7zaECv)](https://www.bilibili.com/video/BV1vpb7zaECv/?spm_id_from=333.337.search-card.all.click&vd_source=142b6836e6a2c5bbefbe6f7d373be844).
+4. **`AMAP_MAPS_API_KEY` (Amap maps MCP)**: If missing, point users to **[Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary)**. Reference walk-through video (Chinese): [Bilibili · Amap MCP (BV1qwZqYJEUG)](https://www.bilibili.com/video/BV1qwZqYJEUG/).
+5. **`DIDI_MCP_KEY` (DiDi MCP)**: If missing, point users to **[DiDi MCP](https://mcp.didichuxing.com/)**. Reference walk-through video (Chinese): [Bilibili · DiDi MCP (BV1vpb7zaECv)](https://www.bilibili.com/video/BV1vpb7zaECv/).
 6. **`VARIFLIGHT_API_KEY` (optional flight fallback)**: If VariFlight fallback is desired but no key exists, ask users to apply via **[VariFlight MCP](https://mcp.variflight.com/)**. Leaving it unset still allows the Ctrip-first path described in FlightTicketMCP.
 
 ## 1. Check the runtime
@@ -140,27 +147,40 @@ This is a stdio MCP server. During manual verification it may wait for MCP clien
 
 ## 6. MCP client configuration
 
-If the client starts from the repository root, relative paths are fine:
+After §5, branch on the **MCP host** answer. **OpenCode** uses `mcp.*` with `environment` and `command` as a string array; **Cursor** and **Claude Code** project `.mcp.json` typically use **`mcpServers` + `env`**—do not mix schemas.
 
-```json
-{
-  "mcpServers": {
-    "travel-mcp-gateway": {
-      "command": "node",
-      "args": ["./build/index.js"],
-      "env": {
-        "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
-        "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
-        "FLIGHT_MCP_PYTHON_COMMAND": "python"
-      }
-    }
-  }
-}
-```
+Copy-ready placeholders live under **[docs/mcp-client-examples/](mcp-client-examples/)** (see `mcp-client-examples/README.md` for the index and canonical doc links).
 
-If the client does not use the repository root as its working directory, change `args` to the absolute path of `build/index.js`.
+### 6.1 Shared rules
 
-The OpenCode project example lives at `.opencode/opencode.json`. Replace placeholders with real keys, or register the same MCP in the user's OpenCode config.
+- The gateway is a **stdio** server: `node` + `build/index.js`.
+- Keep env names aligned with `.env` / host injection: `AMAP_MAPS_API_KEY`, `DIDI_MCP_KEY`, `FLIGHT_MCP_PYTHON_COMMAND`; optional `TRAIN_12306_ENTRY`, `FLIGHT_MCP_PROJECT_ROOT` (see [.env.example](../.env.example)).
+- If the host **cwd is not the repo root**, switch `./build/index.js` (and `./12306-mcp`, `./FlightTicketMCP`) to **absolute paths**.
+
+### 6.2 Cursor
+
+1. Read [Cursor · MCP](https://cursor.com/docs/context/mcp).
+2. Use [cursor.mcp.json.example](mcp-client-examples/cursor.mcp.json.example) to create or merge **`.cursor/mcp.json`** at the project root (and/or merge user-global config per docs).
+3. Replace placeholders (or load secrets from host storage); restart/reload MCP per Cursor guidance.
+
+### 6.3 Claude Code
+
+1. Read [Connect Claude Code to tools via MCP](https://docs.claude.com/en/docs/claude-code/mcp.md).
+2. Copy [claude-code.mcp.json.example](mcp-client-examples/claude-code.mcp.json.example) to repo-root **`.mcp.json`**, or run `claude mcp add --transport stdio ... --scope project` (sample command in [mcp-client-examples/README.md](mcp-client-examples/README.md)).
+3. Respect approval flows and `--` option ordering from the docs.
+4. Replace placeholders like §6.2.
+
+### 6.4 OpenCode
+
+1. OpenCode **does not** use the Desktop-style root **`mcpServers`** block. Use **`mcp.<serverId>`** with **`environment`** (not `env`) and **`command`** as a **string array**—see [.opencode/opencode.json](../.opencode/opencode.json).
+2. Merge [opencode.mcp.fragment.json](mcp-client-examples/opencode.mcp.fragment.json) under the user’s **`mcp` object**.
+3. Optionally set `$schema` to `https://opencode.ai/config.json`. Replace placeholders like §6.2.
+
+### 6.5 Other hosts
+
+1. Search official docs using the **exact product name** the user provided.
+2. Verify config path, root JSON shape, and stdio fields before editing files.
+3. Deliver minimal working snippets for the user to paste locally—never commit live secrets to this repo.
 
 ## 7. Troubleshooting
 

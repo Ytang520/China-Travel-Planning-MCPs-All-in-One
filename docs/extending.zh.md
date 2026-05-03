@@ -23,8 +23,9 @@
 │        ├─ SKILL.md
 │        └─ mcp-error-references.json
 ├─ docs/
-│  └─ assets/
-│     └─ workflow.png
+│  ├─ assets/
+│  │  └─ workflow.png
+│  └─ mcp-client-examples/
 ├─ src/
 │  ├─ config.ts
 │  ├─ index.ts
@@ -55,6 +56,7 @@
 设计约定：
 
 - `docs/agent-install.zh.md` / `docs/agent-install.md` 是面向 LLM Agent 的安装与验证指南
+- `docs/mcp-client-examples/` 存放 Cursor / Claude Code / OpenCode 的 MCP 配置占位示例（见其中 `README.md`）
 - `.opencode/opencode.json` 是 OpenCode 的项目级 MCP 配置示例
 - `.opencode/skills/error-processing/` 存放项目级错误处理 skill 及 MCP 排障参考索引
 - 一级目录按业务域固定为：`train`、`flight`、`map`、`taxi`
