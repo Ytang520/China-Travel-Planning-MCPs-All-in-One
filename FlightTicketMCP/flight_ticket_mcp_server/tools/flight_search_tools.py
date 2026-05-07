@@ -68,9 +68,20 @@ class FlightRouteSearcher:
         logger.info("航班路线查询器初始化完成")
         self.last_parse_status = "not_started"
         self.last_parse_error = None
+        self._earliestStartTime = None
+        self._latestStartTime = None
+        self._earliestArrivalTime = None
+        self._latestArrivalTime = None
 
     def search_flights(
-        self, departure_city: str, destination_city: str, departure_date: str
+        self,
+        departure_city: str,
+        destination_city: str,
+        departure_date: str,
+        earliestStartTime: Optional[int] = None,
+        latestStartTime: Optional[int] = None,
+        earliestArrivalTime: Optional[int] = None,
+        latestArrivalTime: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         搜索航班
@@ -79,10 +90,20 @@ class FlightRouteSearcher:
             departure_city: 出发城市
             destination_city: 目的地城市
             departure_date: 出发日期 (YYYY-MM-DD格式)
+            earliestStartTime: 最早出发小时 (0-23), None表示无限制
+            latestStartTime: 最晚出发小时 (1-24), None表示无限制
+            earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
+            latestArrivalTime: 最晚到达小时 (1-24), None表示无限制
 
         Returns:
             航班信息列表
         """
+        # Store time filter params as instance attributes for filter methods
+        self._earliestStartTime = earliestStartTime
+        self._latestStartTime = latestStartTime
+        self._earliestArrivalTime = earliestArrivalTime
+        self._latestArrivalTime = latestArrivalTime
+
         logger.info(
             f"开始搜索航班：{departure_city} -> {destination_city}, 日期：{departure_date}"
         )
@@ -1117,8 +1138,47 @@ def searchFlightRoutes(
 
         try:
             flights = searcher.search_flights(
-                departure_city, destination_city, departure_date
+                departure_city,
+                destination_city,
+                departure_date,
+                earliestStartTime=earliestStartTime,
+                latestStartTime=latestStartTime,
+                earliestArrivalTime=earliestArrivalTime,
+                latestArrivalTime=latestArrivalTime,
             )
+
+            # Apply time filters if any time params are provided
+            time_filter_warnings = []
+            has_time_filter = any(
+                x is not None
+                for x in [
+                    earliestStartTime,
+                    latestStartTime,
+                    earliestArrivalTime,
+                    latestArrivalTime,
+                ]
+            )
+            if has_time_filter:
+                # Step 1: Try UI-based time filter on Ctrip page (best effort)
+                try:
+                    searcher._apply_time_filter(
+                        earliestStartTime,
+                        latestStartTime,
+                        earliestArrivalTime,
+                        latestArrivalTime,
+                    )
+                except Exception as exc:
+                    logger.warning("UI time filter failed: %s", exc)
+
+                # Step 2: Apply client-side time filter for precision / fallback
+                flights, time_filter_warnings = searcher._client_side_time_filter(
+                    flights,
+                    earliestStartTime,
+                    latestStartTime,
+                    earliestArrivalTime,
+                    latestArrivalTime,
+                )
+
             # merged_flights = _merge_codeshare_flights(flights)
             merged_flights = flights
 
@@ -1154,6 +1214,7 @@ def searchFlightRoutes(
                 "fallback_used": False,
                 "requested_data_source": normalized_preference,
                 "data_source": "ctrip_web_scraping",
+                "time_filter_warnings": time_filter_warnings,
             }
 
             # 添加统计信息
