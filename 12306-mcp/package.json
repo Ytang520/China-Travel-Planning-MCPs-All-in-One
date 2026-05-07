@@ -10,7 +10,6 @@
     "postbuild": "run-script-os",
     "postbuild:darwin:linux": "chmod +x build/index.js",
     "postbuild:default": "",
-    "prepare": "npm run build",
     "test": "tsc && node ./build/index.js",
     "test:http": "tsc && node ./build/index.js --port 8080",
     "debug": "tsc && npx @modelcontextprotocol/inspector node ./build/index.js"

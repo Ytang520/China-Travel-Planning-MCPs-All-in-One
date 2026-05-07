@@ -6,6 +6,7 @@ Supports multiple transports: stdio, sse, and streamable-http using standalone F
 
 import os
 import sys
+from typing import Optional
 
 # Set required environment variable for FastMCP 2.8.1+
 os.environ.setdefault("FASTMCP_LOG_LEVEL", "INFO")
@@ -249,16 +250,24 @@ def register_tools():
         destination_city: str,
         departure_date: str,
         data_source_preference: str = "auto",
+        earliestStartTime: Optional[int] = None,
+        latestStartTime: Optional[int] = None,
+        earliestArrivalTime: Optional[int] = None,
+        latestArrivalTime: Optional[int] = None,
     ):
-        """航班路线查询 - 根据出发地、目的地和出发日期查询可用航班信息。data_source_preference支持auto/default/variflight：auto优先当前默认数据源，失败后回退Variflight；default强制默认数据源；variflight强制使用Variflight。"""
+        """航班路线查询 - 根据出发地、目的地和出发日期查询可用航班信息。data_source_preference支持auto/default/variflight：auto优先当前默认数据源，失败后回退Variflight；default强制默认数据源；variflight强制使用Variflight。earliestStartTime/latestStartTime设置最早/最晚出发小时(0-23/1-24)，earliestArrivalTime/latestArrivalTime设置最早/最晚到达小时(0-23/1-24)。"""
         logger.debug(
-            f"调用航班路线查询工具: departure_city={departure_city}, destination_city={destination_city}, departure_date={departure_date}, data_source_preference={data_source_preference}"
+            f"调用航班路线查询工具: departure_city={departure_city}, destination_city={destination_city}, departure_date={departure_date}, data_source_preference={data_source_preference}, earliestStartTime={earliestStartTime}, latestStartTime={latestStartTime}, earliestArrivalTime={earliestArrivalTime}, latestArrivalTime={latestArrivalTime}"
         )
         return flight_search_tools.searchFlightRoutes(
             departure_city,
             destination_city,
             departure_date,
             data_source_preference,
+            earliestStartTime,
+            latestStartTime,
+            earliestArrivalTime,
+            latestArrivalTime,
         )
 
     # Date tools

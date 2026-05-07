@@ -119,7 +119,7 @@ class FlightRouteSearcher:
 
         try:
             # 访问页面
-            self.page.get(search_url)
+            self.page.get(search_url, timeout=120)
             logger.info("页面加载完成，等待内容渲染...")
             # 智能等待页面加载完成
             self._wait_for_page_ready()
@@ -149,9 +149,7 @@ class FlightRouteSearcher:
             stable_rounds = 0
 
             previous_metrics = self._get_scroll_metrics()
-            scroll_distance = max(
-                600, int(previous_metrics["viewport_height"] * 0.8)
-            )
+            scroll_distance = max(600, int(previous_metrics["viewport_height"] * 0.8))
 
             logger.info(
                 "开始智能滚动，初始页面高度: %s，视口高度: %s，航班元素数量: %s，单次滚动距离: %s",
@@ -253,7 +251,7 @@ class FlightRouteSearcher:
             "bottom_gap": bottom_gap,
         }
 
-    def _wait_for_flight_content(self, timeout=30):
+    def _wait_for_flight_content(self, timeout=60):
         """等待航班内容加载"""
         logger.debug("等待航班内容加载")
 
@@ -274,7 +272,7 @@ class FlightRouteSearcher:
         else:
             logger.debug("航班容器未找到")
 
-    def _wait_for_page_ready(self, timeout=30):
+    def _wait_for_page_ready(self, timeout=60):
         """智能等待页面完全加载"""
         logger.debug("等待页面完全加载")
 
@@ -375,7 +373,11 @@ class FlightRouteSearcher:
             initial_metrics = self._get_scroll_metrics()
             scroll_distance = max(300, int(initial_metrics["viewport_height"] * 0.6))
         except Exception:
-            initial_metrics = {"scroll_height": 0, "viewport_height": 0, "bottom_gap": 0}
+            initial_metrics = {
+                "scroll_height": 0,
+                "viewport_height": 0,
+                "bottom_gap": 0,
+            }
             scroll_distance = 300
 
         initial_added = self._collect_visible_flights(
@@ -653,8 +655,8 @@ class FlightRouteSearcher:
 
             airport_lines = [line for line in container_lines if "机场" in line]
             if len(airport_lines) >= 1:
-                departure_airport, departure_terminal = self._extract_airport_and_terminal(
-                    airport_lines[0]
+                departure_airport, departure_terminal = (
+                    self._extract_airport_and_terminal(airport_lines[0])
                 )
                 flight_info["出发机场"] = departure_airport
                 if departure_terminal:
@@ -703,6 +705,249 @@ class FlightRouteSearcher:
 
         return match.group(1), match.group(2) or ""
 
+    def _apply_time_filter(
+        self,
+        earliestStartTime=None,
+        latestStartTime=None,
+        earliestArrivalTime=None,
+        latestArrivalTime=None,
+    ):
+        """Apply time filter via Ctrip's "起抵时间" filter panel UI.
+
+        Clicks the "起抵时间" button to reveal a panel with departure/arrival
+        time tabs. Maps integer hour ranges to Ctrip's 3 discrete time period
+        buttons:
+        - [6,12) → "上午 6~12点"
+        - [12,18) → "下午 12~18点"
+        - [18,24) → "晚上 18~24点"
+
+        Handles multi-button ranges (clicks all overlapping period buttons).
+        For arrival time, switches to "抵达时段" tab before clicking.
+        Gracefully degrades if the filter button is not found.
+
+        Args:
+            earliestStartTime: Earliest departure hour (0-23), None for no lower bound
+            latestStartTime: Latest departure hour (1-24), None for no upper bound
+            earliestArrivalTime: Earliest arrival hour (0-23), None for no lower bound
+            latestArrivalTime: Latest arrival hour (1-24), None for no upper bound
+        """
+        departure_periods = self._get_time_periods(earliestStartTime, latestStartTime)
+        arrival_periods = self._get_time_periods(earliestArrivalTime, latestArrivalTime)
+
+        if not departure_periods and not arrival_periods:
+            logger.debug("No time filter periods to apply")
+            return
+
+        # Open the "起抵时间" filter panel
+        try:
+            filter_btn = self.page.ele("text:起抵时间", timeout=5)
+            if not filter_btn:
+                logger.warning(
+                    "'起抵时间' filter button not found, skipping time filter"
+                )
+                return
+            filter_btn.click()
+            logger.info("Clicked '起抵时间' filter button")
+            time.sleep(1)
+        except Exception as e:
+            logger.warning(
+                "Failed to click '起抵时间' button: %s, skipping time filter", e
+            )
+            return
+
+        # Apply departure time filter (default "起飞时段" tab is active)
+        if departure_periods:
+            self._click_time_periods(departure_periods, "departure")
+
+        # Apply arrival time filter (switch to "抵达时段" tab first)
+        if arrival_periods:
+            try:
+                arrival_tab = self.page.ele("text:抵达时段", timeout=3)
+                if arrival_tab:
+                    arrival_tab.click()
+                    logger.info("Switched to '抵达时段' tab")
+                    time.sleep(0.5)
+                    self._click_time_periods(arrival_periods, "arrival")
+                else:
+                    logger.warning(
+                        "'抵达时段' tab not found, skipping arrival time filter"
+                    )
+            except Exception as e:
+                logger.warning("Failed to switch to arrival tab: %s", e)
+
+        # Wait for filter to be applied and page to refresh
+        time.sleep(2)
+        self._wait_for_loading_complete(timeout=10)
+        logger.info(
+            "Time filter applied: departure=%s, arrival=%s",
+            departure_periods,
+            arrival_periods,
+        )
+
+    def _click_time_periods(self, periods, label):
+        """Click a list of time period buttons on the filter panel.
+
+        Args:
+            periods: List of Chinese period labels (e.g. ['上午 6~12点'])
+            label: Debug label for logging ('departure' or 'arrival')
+        """
+        for period in periods:
+            try:
+                btn = self.page.ele(f"text:{period}", timeout=3)
+                if btn:
+                    btn.click()
+                    logger.info("Clicked %s period: %s", label, period)
+                    time.sleep(0.5)
+                else:
+                    logger.warning("%s period button not found: %s", label, period)
+            except Exception as e:
+                logger.warning("Failed to click %s period '%s': %s", label, period, e)
+
+    @staticmethod
+    def _get_time_periods(earliest, latest):
+        """Determine which Ctrip time period buttons overlap with [earliest, latest).
+
+        Maps the integer hour range to Ctrip's 3 discrete buttons:
+        - [6, 12) → 上午 6~12点
+        - [12, 18) → 下午 12~18点
+        - [18, 24) → 晚上 18~24点
+
+        Args:
+            earliest: Earliest hour (inclusive), None for 0
+            latest: Latest hour (exclusive), None for 24
+
+        Returns:
+            List of Chinese period label strings to click.
+        """
+        if earliest is None and latest is None:
+            return []
+
+        effective_earliest = earliest if earliest is not None else 0
+        effective_latest = latest if latest is not None else 24
+
+        periods = []
+        # [6, 12) → 上午 — overlap when effective_earliest < 12 and effective_latest > 6
+        if effective_earliest < 12 and effective_latest > 6:
+            periods.append("上午 6~12点")
+        # [12, 18) → 下午
+        if effective_earliest < 18 and effective_latest > 12:
+            periods.append("下午 12~18点")
+        # [18, 24) → 晚上
+        if effective_earliest < 24 and effective_latest > 18:
+            periods.append("晚上 18~24点")
+
+        return periods
+
+    def _client_side_time_filter(
+        self,
+        flights: List[Dict[str, Any]],
+        earliestStartTime: Optional[int] = None,
+        latestStartTime: Optional[int] = None,
+        earliestArrivalTime: Optional[int] = None,
+        latestArrivalTime: Optional[int] = None,
+    ):
+        """Fallback client-side time filter when UI interaction fails.
+
+        Filters already-scraped flights by departure/arrival hour as a
+        post-processing step. Used when the Ctrip "起抵时间" filter panel
+        cannot be interacted with (e.g., button not found or click failed).
+
+        Flight dict format (from _snapshot_visible_flights):
+            {"出发时间": "14:30", "到达时间": "16:45 +1天", ...}
+
+        Args:
+            flights: List of flight dicts to filter
+            earliestStartTime: Earliest departure hour (0-23), None for no lower bound
+            latestStartTime: Latest departure hour (1-24), None for no upper bound
+            earliestArrivalTime: Earliest arrival hour (0-23), None for no lower bound
+            latestArrivalTime: Latest arrival hour (1-24), None for no upper bound
+
+        Returns:
+            Tuple of (filtered_flights, warnings_list)
+            Warnings list contains messages when range spans multiple time periods.
+        """
+        warnings = []
+
+        has_departure_filter = (
+            earliestStartTime is not None or latestStartTime is not None
+        )
+        has_arrival_filter = (
+            earliestArrivalTime is not None or latestArrivalTime is not None
+        )
+
+        if not has_departure_filter and not has_arrival_filter:
+            return flights, warnings
+
+        logger.warning(
+            "Client-side time filtering activated (UI interaction failed or skipped). "
+            "Filtering %d flights by departure/arrival hour.",
+            len(flights),
+        )
+
+        # Warn if range spans multiple time periods (reuses _get_time_periods logic)
+        if has_departure_filter:
+            dep_periods = self._get_time_periods(earliestStartTime, latestStartTime)
+            if len(dep_periods) > 1:
+                msg = (
+                    f"Departure time range [{earliestStartTime}, {latestStartTime}) "
+                    f"spans multiple periods: {dep_periods}"
+                )
+                logger.warning(msg)
+                warnings.append(msg)
+
+        if has_arrival_filter:
+            arr_periods = self._get_time_periods(earliestArrivalTime, latestArrivalTime)
+            if len(arr_periods) > 1:
+                msg = (
+                    f"Arrival time range [{earliestArrivalTime}, {latestArrivalTime}) "
+                    f"spans multiple periods: {arr_periods}"
+                )
+                logger.warning(msg)
+                warnings.append(msg)
+
+        def _parse_hour(time_str: Optional[str]) -> Optional[int]:
+            """Parse the hour from a time string like '14:30' or '16:45 +1天'."""
+            if not time_str:
+                return None
+            clean = str(time_str).replace(" +1天", "").replace("+1天", "").strip()
+            match = re.match(r"(\d{1,2}):", clean)
+            if match:
+                return int(match.group(1))
+            return None
+
+        filtered = []
+        for flight in flights:
+            # Filter by departure hour
+            if has_departure_filter:
+                dep_hour = _parse_hour(flight.get("出发时间"))
+                if dep_hour is not None:
+                    if earliestStartTime is not None and dep_hour < earliestStartTime:
+                        continue
+                    if latestStartTime is not None and dep_hour >= latestStartTime:
+                        continue
+
+            # Filter by arrival hour
+            if has_arrival_filter:
+                arr_hour = _parse_hour(flight.get("到达时间"))
+                if arr_hour is not None:
+                    if (
+                        earliestArrivalTime is not None
+                        and arr_hour < earliestArrivalTime
+                    ):
+                        continue
+                    if latestArrivalTime is not None and arr_hour >= latestArrivalTime:
+                        continue
+
+            filtered.append(flight)
+
+        logger.info(
+            "Client-side time filter: %d → %d flights after filtering",
+            len(flights),
+            len(filtered),
+        )
+
+        return filtered, warnings
+
     def close(self):
         """关闭浏览器"""
         if hasattr(self, "page"):
@@ -715,6 +960,10 @@ def searchFlightRoutes(
     destination_city: str,
     departure_date: str,
     data_source_preference: str = "auto",
+    earliestStartTime: Optional[int] = None,
+    latestStartTime: Optional[int] = None,
+    earliestArrivalTime: Optional[int] = None,
+    latestArrivalTime: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     根据出发地、目的地和出发日期查询航班路线
@@ -723,10 +972,24 @@ def searchFlightRoutes(
         departure_city: 出发城市名称或机场代码
         destination_city: 目的地城市名称或机场代码
         departure_date: 出发日期 (YYYY-MM-DD格式)
+        data_source_preference: 数据源偏好 ("auto", "default", "variflight")
+        earliestStartTime: 最早出发小时 (0-23), None表示无限制
+        latestStartTime: 最晚出发小时 (1-24), None表示无限制
+        earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
+        latestArrivalTime: 最晚到达小时 (1-24), None表示无限制
 
     Returns:
         包含航班查询结果的字典
     """
+    if earliestStartTime is not None and not (0 <= earliestStartTime <= 23):
+        raise ValueError("earliestStartTime must be between 0 and 23")
+    if latestStartTime is not None and not (1 <= latestStartTime <= 24):
+        raise ValueError("latestStartTime must be between 1 and 24")
+    if earliestArrivalTime is not None and not (0 <= earliestArrivalTime <= 23):
+        raise ValueError("earliestArrivalTime must be between 0 and 23")
+    if latestArrivalTime is not None and not (1 <= latestArrivalTime <= 24):
+        raise ValueError("latestArrivalTime must be between 1 and 24")
+
     logger.info(
         f"开始查询航班路线: {departure_city} -> {destination_city}, 日期: {departure_date}, 数据源偏好: {data_source_preference}"
     )
