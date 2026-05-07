@@ -140,13 +140,29 @@ class FlightRouteSearcher:
 
         try:
             # 访问页面
-            self.page.get(search_url, timeout=120)
+            self.page.get(search_url, timeout=90)
             logger.info("页面加载完成，等待内容渲染...")
             # 智能等待页面加载完成
             self._wait_for_page_ready()
 
             # 等待关键元素出现
             self._wait_for_flight_content()
+
+            # 在滚动之前先应用时间筛选（通过"起抵时间"按钮），减少需要加载的航班数量
+            has_time_filter = (
+                earliestStartTime is not None
+                or latestStartTime is not None
+                or earliestArrivalTime is not None
+                or latestArrivalTime is not None
+            )
+            if has_time_filter:
+                self._apply_time_filter(
+                    earliestStartTime,
+                    latestStartTime,
+                    earliestArrivalTime,
+                    latestArrivalTime,
+                )
+                logger.info("时间筛选已应用，继续滚动加载筛选后的航班...")
 
             # 在滚动过程中分段采集航班，避免回到顶部后只解析到一部分虚拟列表
             flights = self._collect_flights_with_scrolling()
@@ -1159,18 +1175,8 @@ def searchFlightRoutes(
                 ]
             )
             if has_time_filter:
-                # Step 1: Try UI-based time filter on Ctrip page (best effort)
-                try:
-                    searcher._apply_time_filter(
-                        earliestStartTime,
-                        latestStartTime,
-                        earliestArrivalTime,
-                        latestArrivalTime,
-                    )
-                except Exception as exc:
-                    logger.warning("UI time filter failed: %s", exc)
-
-                # Step 2: Apply client-side time filter for precision / fallback
+                # Client-side time filter for precision / fallback
+                # (UI filter already applied inside search_flights() before scrolling)
                 flights, time_filter_warnings = searcher._client_side_time_filter(
                     flights,
                     earliestStartTime,
