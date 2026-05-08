@@ -81,7 +81,74 @@ pip install -e .
 cd ..
 ```
 
-## 4. Create environment files
+## 3.5 Install and build 12306-mcp sub-project
+
+> ⚠️ **Known issue**: 12306-mcp's `npm run build` uses `run-script-os` for OS-specific prebuild steps. On Windows, `prebuild:win32` runs `del /q /s build\* >nul 2>&1`, which fails on first build when the `build/` directory does not exist (no files match), returning a non-zero exit code and skipping the `tsc` step.
+> **Workaround**: Use `npx tsc` directly, ensuring the `build/` directory exists first.
+
+```bash
+cd 12306-mcp
+npm install
+# Ensure build directory exists before running tsc
+if (!(Test-Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
+npx tsc
+cd ..
+```
+
+On macOS / Linux, use `npm run build` if it works; otherwise:
+
+```bash
+cd 12306-mcp
+npm install
+mkdir -p build
+npx tsc
+cd ..
+```
+
+## 4. Collect API keys and create environment files
+
+> **MUST collect keys interactively**: Do **not** pause and wait for the user to fill in keys themselves—use the `question` tool to collect each key, and only guide to application links when a key is missing. Then write the collected values to `.env`.
+
+### 4.1 Interactive key collection
+
+Use the `question` tool in this order:
+
+**A. AMAP Maps API Key**
+
+```
+question: "Do you have an AMAP (Amap/Gaode) Maps API Key? (⚠ Do not paste it in chat)"
+options:
+  - "I have a key, I'll enter it" → user inputs the value; write to .env as AMAP_MAPS_API_KEY
+  - "I don't have a key, need to apply" → output application links:
+    - Official: https://lbs.amap.com/api/mcp-server/summary
+    - Video guide: https://www.bilibili.com/video/BV1qwZqYJEUG/
+    - Wait for user to obtain a key before continuing
+```
+
+**B. DIDI MCP Key**
+
+```
+question: "Do you have a DiDi (Didi Chuxing) MCP Key? (⚠ Do not paste it in chat)"
+options:
+  - "I have a key, I'll enter it" → user inputs the value; write to .env as DIDI_MCP_KEY
+  - "I don't have a key, need to apply" → output application links:
+    - Official: https://mcp.didichuxing.com/
+    - Video guide: https://www.bilibili.com/video/BV1vpb7zaECv/
+    - Wait for user to obtain a key before continuing
+```
+
+**C. VARIFLIGHT API Key (optional)**
+
+```
+question: "Do you have a VariFlight API Key? (optional, for flight data fallback)"
+options:
+  - "I have a key" → user inputs the value; also write to FlightTicketMCP/.env as VARIFLIGHT_API_KEY
+  - "Skip, don't use VariFlight" → skip; flights default to Ctrip web data source
+```
+
+### 4.2 Generate .env files
+
+After collecting all keys, create .env files from templates and fill in the values:
 
 Create the root `.env` from the template:
 
@@ -109,7 +176,7 @@ FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
 ```
 
-The optional flight fallback is configured in `FlightTicketMCP/.env`. If the user provides `VARIFLIGHT_API_KEY`, copy the template:
+If the user provided a VariFlight key, also copy the template:
 
 Windows PowerShell:
 
@@ -129,21 +196,26 @@ Then set:
 VARIFLIGHT_API_KEY=user_variflight_key
 ```
 
-If the user does not have a VariFlight key, leave it unset. Flight search tries Ctrip web flight listings first.
+> **Security**: **Never print real keys** in chat; verify `.env` is in `.gitignore` after writing.
 
-## 5. Build and verify
+## 5. Build the gateway and verify
 
 ```bash
 npm run build
 ```
 
-Verify that the server entrypoint starts:
+Verify the server entrypoint starts (confirm 12306-mcp was also built, see §3.5):
 
 ```bash
 node build/index.js
 ```
 
-This is a stdio MCP server. During manual verification it may wait for MCP client messages; the important part is that it does not immediately fail because of missing dependencies, syntax errors, or environment-loading errors.
+This is a stdio MCP server. It will usually wait for MCP client messages; verify there are no immediate errors like missing dependencies (`Cannot find module .../12306-mcp/build/index.js`), syntax errors, or environment-loading errors. If the 12306-mcp build file is missing, return to §3.5.
+
+Expected startup logs should include at minimum:
+- `12306 MCP Server running on stdio`
+- `Flight Ticket MCP Server logging initialized`
+- `[gateway] travel MCP gateway running on stdio`
 
 ## 6. MCP client configuration
 
@@ -191,3 +263,53 @@ For MCP connection, authentication, schema, or response-format issues:
 3. Check that `FlightTicketMCP` dependencies are installed.
 4. For Amap, DiDi, and VariFlight key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
 5. Never print full environment dumps, tokens, real secrets, or private account data.
+
+## 8. Post-deployment smoke test
+
+After configuration is complete, verify the four domains (train / flight / map / taxi) are working. Use the gateway MCP tools for the following tests.
+
+### 8.1 Get today's date
+
+Call `travel-mcp-gateway_train_12306_get_current_date` (or `travel-mcp-gateway_flight_flight_ticket_mcp_server_getCurrentDate`) to retrieve the current date in `yyyy-MM-dd` format.
+
+### 8.2 Test train ticket search (train domain)
+
+Query high-speed trains from **Shanghai** to **Beijing** for today:
+
+- Tool: `travel-mcp-gateway_train_12306_get_tickets`
+- Params: `date` = today, `fromStation` = "上海", `toStation` = "北京", `trainFilterFlags` = "G", `limitedNum` = 3
+- Format: `text`
+
+Expected: A list of high-speed train options. If it fails or `station_code` resolution has issues, check `TRAIN_12306_ENTRY` in `.env` points to the correct `12306-mcp/build/index.js`.
+
+### 8.3 Test flight search (flight domain)
+
+Query flights from **Shanghai** to **Beijing** for today:
+
+- Tool: `travel-mcp-gateway_flight_flight_ticket_mcp_server_searchFlightRoutes`
+- Params: `departure_city` = "上海", `destination_city` = "北京", `departure_date` = today
+- Format: `text`
+
+Expected: A list of flights. If it fails, check `FlightTicketMCP/.venv` exists and `FLIGHT_MCP_PYTHON_COMMAND` is correct.
+
+### 8.4 Test map geocoding (map domain)
+
+Call `travel-mcp-gateway_map_amap_maps_geo` to geocode "北京南站":
+
+- Params: `address` = "北京南站", `city` = "北京"
+
+Expected: Latitude/longitude coordinates. If it fails, check that `AMAP_MAPS_API_KEY` is valid.
+
+### 8.5 Report results
+
+Report the four test results in this format:
+
+```
+| Domain | Tool                          | Status | Notes              |
+|--------|-------------------------------|--------|--------------------|
+| train  | get_tickets (Shanghai→Beijing) | ✅/❌  | N trains found     |
+| flight | searchFlightRoutes (Shanghai→Beijing) | ✅/❌ | N flights found    |
+| map    | maps_geo (Beijing South)     | ✅/❌  | coords: lng, lat   |
+```
+
+If all domains pass, the installation was successful. If any domain fails, consult §7.
