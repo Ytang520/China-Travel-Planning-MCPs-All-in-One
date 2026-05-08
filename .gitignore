@@ -16,6 +16,16 @@ logs/
 FlightTicketMCP/logs/
 *.log
 
+# Test & debug artifacts
+test_ctrip*.py
+ctrip_time_filter_test.py
+ctrip_test_output/
+tmp/
+*.png
+.playwright-mcp/
+.sisyphus/
+skills/
+
 .ruff_cache/
 __pycache__/
 *.pyc

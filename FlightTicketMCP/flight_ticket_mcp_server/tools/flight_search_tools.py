@@ -140,7 +140,7 @@ class FlightRouteSearcher:
 
         try:
             # 访问页面
-            self.page.get(search_url, timeout=90)
+            self.page.get(search_url, timeout=180)
             logger.info("页面加载完成，等待内容渲染...")
             # 智能等待页面加载完成
             self._wait_for_page_ready()
@@ -403,12 +403,12 @@ class FlightRouteSearcher:
         seen_flight_keys = set()
 
         max_scroll_rounds = 100
-        max_stable_rounds = 5
+        max_stable_rounds = 8
         stable_rounds = 0
 
         try:
             initial_metrics = self._get_scroll_metrics()
-            scroll_distance = max(300, int(initial_metrics["viewport_height"] * 0.6))
+            scroll_distance = max(400, int(initial_metrics["viewport_height"] * 0.8))
         except Exception:
             initial_metrics = {
                 "scroll_height": 0,
@@ -429,11 +429,10 @@ class FlightRouteSearcher:
 
         last_scroll_height = initial_metrics["scroll_height"]
         for round_index in range(1, max_scroll_rounds + 1):
-            target_position = round_index * scroll_distance
             try:
-                self.page.run_js(f"window.scrollTo(0, {target_position});")
-                logger.info("第%s次滚动到 %spx", round_index, target_position)
-                time.sleep(2)
+                self.page.run_js(f"window.scrollBy(0, {scroll_distance});")
+                logger.info("第%s次向下滚动 %spx", round_index, scroll_distance)
+                time.sleep(1)
                 self._wait_for_loading_complete(timeout=5)
                 time.sleep(1)
 

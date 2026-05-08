@@ -120,10 +120,14 @@ export const connectAndRegisterProvider = async (
         annotations: tool.annotations,
       },
       async (args) => {
-        const result = (await client.callTool({
-          name: tool.name,
-          arguments: args as Record<string, unknown>,
-        })) as CallToolResult | { toolResult: unknown; _meta?: Record<string, unknown> };
+        const result = (await client.callTool(
+          {
+            name: tool.name,
+            arguments: args as Record<string, unknown>,
+          },
+          undefined,
+          { timeout: provider.requestTimeout },
+        )) as CallToolResult | { toolResult: unknown; _meta?: Record<string, unknown> };
 
         return normalizeToolResult(result);
       },

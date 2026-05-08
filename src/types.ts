@@ -45,6 +45,8 @@ export type DownstreamProviderDefinition = {
   enabled: boolean;
   retainInReadme: boolean;
   transport: ProviderTransportConfig;
+  /** MCP request timeout in ms for tool calls. Default: 60000 (60s). Set higher for long-running tools like flight scraping. */
+  requestTimeout?: number;
   includeTools?: string[];
   excludeTools?: string[];
   readmeToolNames?: string[];
