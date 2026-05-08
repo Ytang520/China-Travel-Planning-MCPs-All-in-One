@@ -11,6 +11,7 @@ export const createFlightTicketProvider = (
     description: "Flight search, transfer, weather, and real-time flight tools.",
     enabled: true,
     retainInReadme: true,
+    requestTimeout: 600_000, // 10 min — flight scraping via headless Chrome can take 3-8 min
     transport: {
       kind: "stdio",
       command: config.flightPythonCommand,
