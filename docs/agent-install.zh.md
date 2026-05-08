@@ -81,7 +81,74 @@ pip install -e .
 cd ..
 ```
 
-## 4. 生成环境变量文件
+## 3.5 安装并构建 12306-mcp 子项目
+
+> ⚠️ **已知问题**：12306-mcp 的 `npm run build` 通过 `run-script-os` 执行 OS 特定预构建脚本。Windows 上 `prebuild:win32` 运行 `del /q /s build\* >nul 2>&1`，当 `build/` 目录不存在（如首次构建）时可能因无匹配文件而返回非零退出码，导致后续 `tsc` 步骤被跳过。
+> **解决方案**：直接使用 `npx tsc` 构建，并确保 `build/` 目录存在。
+
+```bash
+cd 12306-mcp
+npm install
+# 确保 build 目录存在后再运行 tsc
+if (!(Test-Path build)) { New-Item -ItemType Directory -Path build | Out-Null }
+npx tsc
+cd ..
+```
+
+macOS / Linux 下若 npm run build 正常则无需额外处理，但若遇到同样问题可手动运行：
+
+```bash
+cd 12306-mcp
+npm install
+mkdir -p build
+npx tsc
+cd ..
+```
+
+## 4. 收集 API Key 并生成环境变量文件
+
+> **必须交互式收集 Key**：**不要直接中断**等用户自行填写——先通过 `question` 工具逐项向用户收集，缺 Key 时引导申请链接。收集完成后写入 `.env`。
+
+### 4.1 交互式收集 Key
+
+按以下顺序使用 `question` 工具询问用户：
+
+**A. AMAP Maps API Key（高德地图）**
+
+```
+question: "你有高德地图 MCP 的 API Key 吗？（⚠ 不要粘贴在聊天里）"
+选项: 
+  - "我有 Key，我会输入" → 用户输入值后，你将该值写入 .env 的 AMAP_MAPS_API_KEY
+  - "我没有 Key，需要申请" → 输出申请链接：
+    - 官方：https://lbs.amap.com/api/mcp-server/summary
+    - 视频教程：https://www.bilibili.com/video/BV1qwZqYJEUG/
+    - 等用户拿到 Key 后继续
+```
+
+**B. DIDI MCP Key（滴滴出行）**
+
+```
+question: "你有滴滴出行 MCP 的 API Key 吗？（⚠ 不要粘贴在聊天里）"
+选项:
+  - "我有 Key，我会输入" → 用户输入值后，你将该值写入 .env 的 DIDI_MCP_KEY
+  - "我没有 Key，需要申请" → 输出申请链接：
+    - 官方：https://mcp.didichuxing.com/
+    - 视频教程：https://www.bilibili.com/video/BV1vpb7zaECv/
+    - 等用户拿到 Key 后继续
+```
+
+**C. VARIFLIGHT API Key（可选）**
+
+```
+question: "你有 VariFlight API Key 吗？（可选，用于航班备选数据源）"
+选项:
+  - "我有 Key" → 用户输入值后，同时写入 FlightTicketMCP/.env 的 VARIFLIGHT_API_KEY
+  - "跳过，不用 VariFlight" → 跳过，航班查询会优先使用携程数据源
+```
+
+### 4.2 生成 .env 文件
+
+收集完所有 Key 后，再从模板生成并填入真实值：
 
 从模板生成根目录 `.env`：
 
@@ -109,7 +176,7 @@ FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
 ```
 
-航班备选数据源需要单独配置 `FlightTicketMCP/.env`。如果用户提供了 `VARIFLIGHT_API_KEY`，从模板复制：
+如果用户提供了 VariFlight Key，从模板复制：
 
 Windows PowerShell：
 
@@ -129,21 +196,26 @@ cp FlightTicketMCP/.env.example FlightTicketMCP/.env
 VARIFLIGHT_API_KEY=用户提供的VariFlightKey
 ```
 
-如果用户没有 VariFlight Key，可以跳过该值；航班查询会优先尝试携程网页航班列表。
+> **安全警告**：**永远不要在回复中打印真实密钥**；不要提交 `.env` 到 git；写文件后立刻验证 `.env` 是否在 `.gitignore` 中。
 
-## 5. 构建并验证
+## 5. 构建根网关并验证
 
 ```bash
 npm run build
 ```
 
-验证服务入口存在：
+验证服务入口存在（确认 12306-mcp 也已构建，见 §3.5）：
 
 ```bash
 node build/index.js
 ```
 
-这是 stdio MCP 服务。启动后通常会等待 MCP 客户端通信；手动验证时确认没有立即抛出缺失依赖、语法错误或环境读取错误即可。
+这是 stdio MCP 服务。启动后通常会等待 MCP 客户端通信；确认没有立即抛出缺失依赖（如 `Cannot find module .../12306-mcp/build/index.js`）、语法错误或环境读取错误即可。若 12306-mcp 构建文件缺失，请回到 §3.5 补构建。
+
+期望的启动日志至少应包含：
+- `12306 MCP Server running on stdio`
+- `Flight Ticket MCP Server 启动中`
+- `[gateway] travel MCP gateway running on stdio`
 
 ## 6. MCP 客户端配置
 
@@ -191,3 +263,53 @@ node build/index.js
 3. 检查 `FlightTicketMCP` 依赖是否已安装。
 4. 高德、滴滴、VariFlight 的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
 5. 不要输出完整环境变量、token、真实密钥或私人账号数据。
+
+## 8. 部署后功能测试
+
+配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。使用网关提供的 MCP 工具执行以下测试，确保各域下游连接正常。
+
+### 8.1 获取当前日期
+
+调用 `travel-mcp-gateway_train_12306_get_current_date`（或 `travel-mcp-gateway_flight_flight_ticket_mcp_server_getCurrentDate`）获取当天日期 `yyyy-MM-dd`，用于后续查询。
+
+### 8.2 测试火车票查询（train 域）
+
+查询当天从 **上海** 到 **北京** 的高铁票：
+
+- 工具：`travel-mcp-gateway_train_12306_get_tickets`
+- 参数：`date` = 当天日期，`fromStation` = "上海"，`toStation` = "北京"，`trainFilterFlags` = "G"，`limitedNum` = 3
+- 格式：`text`
+
+预期：返回高铁车次列表。若连接失败或 `station_code` 解析有误，检查 `.env` 中 `TRAIN_12306_ENTRY` 是否指向正确的 `12306-mcp/build/index.js`。
+
+### 8.3 测试航班查询（flight 域）
+
+查询当天从 **上海** 到 **北京** 的航班：
+
+- 工具：`travel-mcp-gateway_flight_flight_ticket_mcp_server_searchFlightRoutes`
+- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 当天日期
+- 格式：`text`
+
+预期：返回航班列表。若失败，检查 `FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。
+
+### 8.4 测试地图工具（map 域）
+
+调用 `travel-mcp-gateway_map_amap_maps_geo` 将 "北京南站" 解析为经纬度坐标：
+
+- 参数：`address` = "北京南站"，`city` = "北京"
+
+预期：返回经纬度坐标。若失败，检查 `AMAP_MAPS_API_KEY` 是否有效。
+
+### 8.5 测试结果汇总
+
+向用户报告四项测试结果，格式如下：
+
+```
+| 域    | 工具                        | 状态 | 备注               |
+|-------|----------------------------|------|-------------------|
+| train | get_tickets (上海→北京)      | ✅/❌ | 返回 N 趟车次       |
+| flight| searchFlightRoutes (上海→北京)| ✅/❌ | 返回 N 个航班       |
+| map   | maps_geo (北京南站)          | ✅/❌ | 坐标: lng, lat     |
+```
+
+若所有域均通过，安装成功。若任一域失败，参考 §7 排障。
