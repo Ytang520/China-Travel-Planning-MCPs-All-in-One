@@ -28,7 +28,7 @@ Ask where this MCP will run:
 
 4. **`AMAP_MAPS_API_KEY` (Amap maps MCP)**: If missing, point users to **[Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary)**. Reference walk-through video (Chinese): [Bilibili · Amap MCP (BV1qwZqYJEUG)](https://www.bilibili.com/video/BV1qwZqYJEUG/).
 5. **`DIDI_MCP_KEY` (DiDi MCP)**: If missing, point users to **[DiDi MCP](https://mcp.didichuxing.com/)**. Reference walk-through video (Chinese): [Bilibili · DiDi MCP (BV1vpb7zaECv)](https://www.bilibili.com/video/BV1vpb7zaECv/).
-6. **`VARIFLIGHT_API_KEY` (optional flight fallback)**: If VariFlight fallback is desired but no key exists, ask users to apply via **[VariFlight MCP](https://mcp.variflight.com/)**. Leaving it unset still allows the Ctrip-first path described in FlightTicketMCP.
+6. **Browser engine (flight scraping)**: Ctrip's anti-bot WAF requires a visible browser. At install time, ask the user to pick **A = Edge (default) / B = Chrome**, or provide a custom browser path (see item C in §4.1).
 
 ## 1. Check the runtime
 
@@ -137,13 +137,15 @@ options:
     - Wait for user to obtain a key before continuing
 ```
 
-**C. VARIFLIGHT API Key (optional)**
+**C. Browser engine choice (flight scraping, A/B)**
 
 ```
-question: "Do you have a VariFlight API Key? (optional, for flight data fallback)"
+question: "Which browser engine should flight scraping use? (Ctrip anti-bot requires a visible browser)"
 options:
-  - "I have a key" → user inputs the value; also write to FlightTicketMCP/.env as VARIFLIGHT_API_KEY
-  - "Skip, don't use VariFlight" → skip; flights default to Ctrip web data source
+  - "A. Edge (default, ships with Windows)" → set FLIGHT_MCP_BROWSER=edge
+  - "B. Chrome" → set FLIGHT_MCP_BROWSER=chrome
+  - "Custom path" → set FLIGHT_MCP_BROWSER_PATH=<absolute browser path>
+Note: searches open a minimized window (taskbar-visible, no foreground focus); headless mode is blocked by Ctrip and disabled by default.
 ```
 
 ### 4.2 Generate .env files
@@ -174,27 +176,15 @@ DIDI_MCP_KEY=user_didi_key
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
+# Browser engine: A=edge (default) / B=chrome
+FLIGHT_MCP_BROWSER=edge
+# Custom browser path (optional, takes precedence over FLIGHT_MCP_BROWSER)
+# FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# Headless mode (not recommended: blocked by Ctrip whaleguard)
+# FLIGHT_MCP_HEADLESS=1
 ```
 
-If the user provided a VariFlight key, also copy the template:
-
-Windows PowerShell:
-
-```powershell
-Copy-Item FlightTicketMCP/.env.example FlightTicketMCP/.env
-```
-
-macOS / Linux:
-
-```bash
-cp FlightTicketMCP/.env.example FlightTicketMCP/.env
-```
-
-Then set:
-
-```dotenv
-VARIFLIGHT_API_KEY=user_variflight_key
-```
+> **Windows path note**: relative paths in gateway-injected env vars resolve against the **child process cwd** (e.g. a relative `FLIGHT_MCP_PYTHON_COMMAND` is joined under `FLIGHT_MCP_PROJECT_ROOT`). Use **absolute paths** for `FLIGHT_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, and `FLIGHT_MCP_BROWSER_PATH` (e.g. `C:/Users/xxx/.../FlightTicketMCP/.venv/Scripts/python.exe`).
 
 > **Security**: **Never print real keys** in chat; verify `.env` is in `.gitignore` after writing.
 
@@ -261,48 +251,59 @@ For MCP connection, authentication, schema, or response-format issues:
 1. Check that `.env` and the client config use the same variable names.
 2. Check that `npm run build` succeeds.
 3. Check that `FlightTicketMCP` dependencies are installed.
-4. For Amap, DiDi, and VariFlight key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
-5. Never print full environment dumps, tokens, real secrets, or private account data.
+4. For Amap and DiDi key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
+5. For flight failures, call `gateway_get_config` first to inspect provider connectivity and browser strategy (engine, headless flag, path override). Common browser-related causes: no Chrome/Edge installed, wrong `FLIGHT_MCP_BROWSER` engine, or `FLIGHT_MCP_HEADLESS=1` being blocked by Ctrip.
+6. Never print full environment dumps, tokens, real secrets, or private account data.
 
 ## 8. Post-deployment smoke test
 
-After configuration is complete, verify the four domains (train / flight / map / taxi) are working. Use the gateway MCP tools for the following tests.
+After configuration is complete, verify the four domains (train / flight / map / taxi) are working. The fastest way is the gateway self-check tool `gateway_health_check` (no arguments = probe every domain; returns PASS/FAIL plus samples); call `gateway_get_config` first if you need runtime state. Manual per-domain checks follow.
+
+> Tool naming: gateway tool names use the `{domain}_{provider}_{tool}` form (e.g. `train_12306_get_tickets`); hosts may display an extra prefix (`mcp__travel-mcp-gateway__` in Claude Code). Use the `gatewayName` values returned by `gateway_list_retained_tools`.
 
 ### 8.1 Get today's date
 
-Call `travel-mcp-gateway_train_12306_get_current_date` (or `travel-mcp-gateway_flight_flight_ticket_mcp_server_getCurrentDate`) to retrieve the current date in `yyyy-MM-dd` format.
+Call `train_12306_get_current_date` (or `flight_flight_ticket_mcp_server_getCurrentDate`) to retrieve the current date in `yyyy-MM-dd` format.
 
 ### 8.2 Test train ticket search (train domain)
 
 Query high-speed trains from **Shanghai** to **Beijing** for today:
 
-- Tool: `travel-mcp-gateway_train_12306_get_tickets`
-- Params: `date` = today, `fromStation` = "上海", `toStation` = "北京", `trainFilterFlags` = "G", `limitedNum` = 3
-- Format: `text`
+- Tool: `train_12306_get_tickets`
+- Params: `date` = today, `fromStation` = "上海", `toStation` = "北京", `trainFilterFlags` = "G", `limitedNum` = 3, `format` = "text"
 
-Expected: A list of high-speed train options. If it fails or `station_code` resolution has issues, check `TRAIN_12306_ENTRY` in `.env` points to the correct `12306-mcp/build/index.js`.
+Expected: A list of high-speed train options. If it fails or `station_code` resolution has issues, check `TRAIN_12306_ENTRY` in `.env` points to the correct `12306-mcp/build/index.js`. Interline/transfer queries are available via `train_12306_get_interline_tickets` (path fixed after the 12306 site rework).
 
 ### 8.3 Test flight search (flight domain)
 
 Query flights from **Shanghai** to **Beijing** for today:
 
-- Tool: `travel-mcp-gateway_flight_flight_ticket_mcp_server_searchFlightRoutes`
-- Params: `departure_city` = "上海", `destination_city` = "北京", `departure_date` = today
-- Format: `text`
+- Tool: `flight_flight_ticket_mcp_server_searchFlightRoutes`
+- Params: `departure_city` = "上海", `destination_city` = "北京", `departure_date` = today, `data_source_preference` = "default" (or `auto`; there is **no `format` parameter**); optional hour filters: `earliestStartTime` / `latestStartTime` (0-23) / `earliestArrivalTime` / `latestArrivalTime`
+- Returns: JSON text with `status`, `flight_count`, `flights`, `formatted_output`, etc.
 
-Expected: A list of flights. If it fails, check `FlightTicketMCP/.venv` exists and `FLIGHT_MCP_PYTHON_COMMAND` is correct.
+Expected: A list of flights (takes 1–8 minutes; a **minimized browser window** appears briefly in the taskbar without stealing focus). If it fails, check: Chrome/Edge installed, `FLIGHT_MCP_BROWSER` engine choice, `FLIGHT_MCP_HEADLESS` must not be 1 (blocked by Ctrip), `FlightTicketMCP/.venv` exists, and `FLIGHT_MCP_PYTHON_COMMAND` is correct. Note: the flight transfer tool is intentionally absent.
 
 ### 8.4 Test map geocoding (map domain)
 
-Call `travel-mcp-gateway_map_amap_maps_geo` to geocode "北京南站":
+Call `map_amap_maps_geo` to geocode "北京南站":
 
 - Params: `address` = "北京南站", `city` = "北京"
 
 Expected: Latitude/longitude coordinates. If it fails, check that `AMAP_MAPS_API_KEY` is valid.
 
-### 8.5 Report results
+### 8.5 Test taxi (taxi domain)
 
-Report the four test results in this format:
+Call in order:
+
+1. `taxi_didi_maps_textsearch`: params `keywords` = "北京南站", `city` = "北京" (both required)
+2. `taxi_didi_taxi_estimate`: params `from_name`/`from_lng`/`from_lat`/`to_name`/`to_lng`/`to_lat` — coordinates MUST come from the textsearch result in step 1, never assumed
+
+Expected: fare estimates for multiple ride types (estimate only — no booking).
+
+### 8.6 Report results
+
+Report the test results in this format:
 
 ```
 | Domain | Tool                          | Status | Notes              |
@@ -310,6 +311,7 @@ Report the four test results in this format:
 | train  | get_tickets (Shanghai→Beijing) | ✅/❌  | N trains found     |
 | flight | searchFlightRoutes (Shanghai→Beijing) | ✅/❌ | N flights found    |
 | map    | maps_geo (Beijing South)     | ✅/❌  | coords: lng, lat   |
+| taxi   | maps_textsearch (Beijing South) | ✅/❌ | N places found    |
 ```
 
 If all domains pass, the installation was successful. If any domain fails, consult §7.

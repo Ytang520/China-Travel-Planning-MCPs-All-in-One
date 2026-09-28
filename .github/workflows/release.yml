@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check package version matches tag
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$pkg" != "$tag" ]; then
+            echo "package.json version ${pkg} does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+      - name: Extract release notes
+        shell: bash
+        run: node scripts/extract-release-notes.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md

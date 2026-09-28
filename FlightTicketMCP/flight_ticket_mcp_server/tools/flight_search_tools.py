@@ -7,6 +7,7 @@ Flight Search Tools - 航班路线查询工具
 from datetime import datetime
 from typing import Dict, List, Optional, Any
 import json
+import os
 import random
 import logging
 import time
@@ -14,11 +15,6 @@ import re
 
 # 初始化日志器
 logger = logging.getLogger(__name__)
-
-try:
-    from . import variflight_tools
-except ImportError:
-    variflight_tools = None
 
 # 导入DrissionPage（可选）
 try:
@@ -42,6 +38,48 @@ except ImportError:
 
 # =================== 航班路线查询功能 ===================
 
+EDGE_CANDIDATES = [
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+]
+CHROME_CANDIDATES = [
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+]
+
+
+def _resolve_browser_path() -> Optional[str]:
+    """Resolve a Chromium-based browser for DrissionPage.
+
+    Precedence: FLIGHT_MCP_BROWSER_PATH (explicit override) >
+    FLIGHT_MCP_BROWSER engine choice (A=edge, B=chrome; default edge) >
+    probe the other engine as fallback.
+    """
+    env_path = os.environ.get("FLIGHT_MCP_BROWSER_PATH")
+    if env_path:
+        return env_path
+
+    engine = (os.environ.get("FLIGHT_MCP_BROWSER") or "edge").strip().lower()
+    if engine not in {"edge", "chrome"}:
+        logger.warning("Unknown FLIGHT_MCP_BROWSER=%r, falling back to 'edge'", engine)
+        engine = "edge"
+
+    primary, secondary = (
+        (EDGE_CANDIDATES, CHROME_CANDIDATES)
+        if engine == "edge"
+        else (CHROME_CANDIDATES, EDGE_CANDIDATES)
+    )
+    for path in primary:
+        if os.path.exists(path):
+            return path
+    for path in secondary:
+        if os.path.exists(path):
+            logger.warning(
+                "FLIGHT_MCP_BROWSER=%s not found; falling back to %s", engine, path
+            )
+            return path
+    return None
+
 
 class FlightRouteSearcher:
     """航班路线查询器"""
@@ -58,12 +96,28 @@ class FlightRouteSearcher:
 
         self.base_url = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
 
+        co = ChromiumOptions()
+        # Port 9222 can be occupied by a non-DevTools Chrome instance;
+        # let DrissionPage pick a free port instead.
+        co.auto_port()
+        browser_path = _resolve_browser_path()
+        if browser_path:
+            co.set_browser_path(browser_path)
         if headless:
-            co = ChromiumOptions()
+            logger.warning(
+                "FLIGHT_MCP_HEADLESS=1: Ctrip (whaleguard) blocks headless "
+                "browsers; expect HTTP 432 / SCRAPING_FAILED."
+            )
             co.headless()
-            self.page = ChromiumPage(co)
         else:
-            self.page = ChromiumPage()
+            # 后台打开：窗口最小化启动，任务栏可见，不抢占前台焦点。
+            co.set_argument('--start-minimized')
+            co.set_argument('--window-size', '1280,900')
+            # 最小化窗口会被 Chromium 节流，导致懒加载滚动拿不到数据。
+            co.set_argument('--disable-backgrounding-occluded-windows')
+            co.set_argument('--disable-renderer-backgrounding')
+            co.set_argument('--disable-background-timer-throttling')
+        self.page = ChromiumPage(co)
 
         logger.info("航班路线查询器初始化完成")
         self.last_parse_status = "not_started"
@@ -1008,7 +1062,7 @@ def searchFlightRoutes(
         departure_city: 出发城市名称或机场代码
         destination_city: 目的地城市名称或机场代码
         departure_date: 出发日期 (YYYY-MM-DD格式)
-        data_source_preference: 数据源偏好 ("auto", "default", "variflight")
+        data_source_preference: 数据源偏好 ("auto", "default")
         earliestStartTime: 最早出发小时 (0-23), None表示无限制
         latestStartTime: 最晚出发小时 (1-24), None表示无限制
         earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
@@ -1031,48 +1085,22 @@ def searchFlightRoutes(
     )
 
     normalized_preference = (data_source_preference or "auto").strip().lower()
-    if normalized_preference not in {"auto", "default", "variflight"}:
+    if normalized_preference == "variflight":
         return {
             "status": "error",
-            "message": "data_source_preference 仅支持 auto、default、variflight",
+            "message": "VariFlight 数据源已下线，请使用 auto/default（携程网页数据源）",
+            "error_code": "DATA_SOURCE_REMOVED",
+            "data_source": "system",
+        }
+    if normalized_preference not in {"auto", "default"}:
+        return {
+            "status": "error",
+            "message": "data_source_preference 仅支持 auto、default",
             "error_code": "INVALID_DATA_SOURCE_PREFERENCE",
             "data_source": "system",
         }
 
-    def use_variflight_fallback(primary_error: Dict[str, Any]) -> Dict[str, Any]:
-        if normalized_preference == "default" or not variflight_tools:
-            return primary_error
-
-        fallback_result = variflight_tools.searchFlightRoutes(
-            departure_city,
-            destination_city,
-            departure_date,
-        )
-        if fallback_result.get("status") == "success":
-            fallback_result["primary_error"] = primary_error
-            fallback_result["message"] = "主数据源失败，已切换到 Variflight 备选方案"
-            return fallback_result
-
-        primary_error["fallback_error"] = fallback_result
-        return primary_error
-
     try:
-        if normalized_preference == "variflight":
-            if not variflight_tools:
-                return {
-                    "status": "error",
-                    "message": "Variflight 数据源不可用",
-                    "error_code": "VARIFLIGHT_NOT_AVAILABLE",
-                    "data_source": "system",
-                }
-            direct_result = variflight_tools.searchFlightRoutes(
-                departure_city,
-                destination_city,
-                departure_date,
-            )
-            direct_result["requested_data_source"] = "variflight"
-            return direct_result
-
         # 验证输入参数
         if not departure_city or not destination_city or not departure_date:
             logger.warning("参数不完整")
@@ -1086,25 +1114,21 @@ def searchFlightRoutes(
         # 检查依赖是否可用
         if not DRISSION_PAGE_AVAILABLE:
             logger.error("DrissionPage库未安装")
-            return use_variflight_fallback(
-                {
-                    "status": "error",
-                    "message": "DrissionPage库未安装，无法进行航班搜索",
-                    "error_code": "DRISSION_PAGE_NOT_AVAILABLE",
-                    "data_source": "ctrip_web_scraping",
-                }
-            )
+            return {
+                "status": "error",
+                "message": "DrissionPage库未安装，无法进行航班搜索",
+                "error_code": "DRISSION_PAGE_NOT_AVAILABLE",
+                "data_source": "ctrip_web_scraping",
+            }
 
         if not get_airport_code or not get_city_name:
             logger.error("城市字典未找到")
-            return use_variflight_fallback(
-                {
-                    "status": "error",
-                    "message": "城市字典未找到，无法进行航班搜索",
-                    "error_code": "CITIES_DICT_NOT_AVAILABLE",
-                    "data_source": "ctrip_web_scraping",
-                }
-            )
+            return {
+                "status": "error",
+                "message": "城市字典未找到，无法进行航班搜索",
+                "error_code": "CITIES_DICT_NOT_AVAILABLE",
+                "data_source": "ctrip_web_scraping",
+            }
 
         # 验证日期格式
         try:
@@ -1149,7 +1173,11 @@ def searchFlightRoutes(
             }
 
         # 创建搜索器并搜索
-        searcher = FlightRouteSearcher(headless=True)
+        # 携程 WAF（whaleguard）会拦截无头浏览器，因此默认使用可见浏览器；
+        # 设置 FLIGHT_MCP_HEADLESS=1 可切回无头模式。
+        searcher = FlightRouteSearcher(
+            headless=os.environ.get("FLIGHT_MCP_HEADLESS", "0") == "1"
+        )
 
         try:
             flights = searcher.search_flights(
@@ -1188,18 +1216,16 @@ def searchFlightRoutes(
             merged_flights = flights
 
             if searcher.last_parse_status in {"request_failed", "parse_failed"}:
-                return use_variflight_fallback(
-                    {
-                        "status": "error",
-                        "message": searcher.last_parse_error or "航班页面抓取失败",
-                        "error_code": "SCRAPING_FAILED",
-                        "departure_city": departure_city,
-                        "destination_city": destination_city,
-                        "departure_date": departure_date,
-                        "query_time": datetime.now().isoformat(),
-                        "data_source": "ctrip_web_scraping",
-                    }
-                )
+                return {
+                    "status": "error",
+                    "message": searcher.last_parse_error or "航班页面抓取失败",
+                    "error_code": "SCRAPING_FAILED",
+                    "departure_city": departure_city,
+                    "destination_city": destination_city,
+                    "departure_date": departure_date,
+                    "query_time": datetime.now().isoformat(),
+                    "data_source": "ctrip_web_scraping",
+                }
 
             # 格式化结果
             result = {
@@ -1269,7 +1295,7 @@ def searchFlightRoutes(
             "requested_data_source": normalized_preference,
             "data_source": "ctrip_web_scraping",
         }
-        return use_variflight_fallback(primary_error)
+        return primary_error
 
 
 def _format_route_result(

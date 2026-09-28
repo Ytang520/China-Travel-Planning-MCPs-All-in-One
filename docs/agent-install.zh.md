@@ -28,7 +28,7 @@
 
 4. **`AMAP_MAPS_API_KEY`（高德地图 MCP）**：若用户暂无密钥，引导其在 **[高德 MCP Server 概述](https://lbs.amap.com/api/mcp-server/summary)** 按官方流程申请与配置。可让其参考讲解视频：[哔哩哔哩 · 高德 MCP（BV1qwZqYJEUG）](https://www.bilibili.com/video/BV1qwZqYJEUG/)。
 5. **`DIDI_MCP_KEY`（滴滴出行 MCP）**：若用户暂无密钥，引导其在 **[滴滴 MCP 开放平台](https://mcp.didichuxing.com/)** 申请。可让其参考讲解视频：[哔哩哔哩 · 滴滴出行 MCP（BV1vpb7zaECv）](https://www.bilibili.com/video/BV1vpb7zaECv/)。
-6. **`VARIFLIGHT_API_KEY`（可选，航班备选数据源）**：若用户需要 VariFlight 备选而暂无密钥，引导其在 **[VariFlight MCP](https://mcp.variflight.com/)** 申请；未配置时仍可优先走携程网页数据源（见 FlightTicketMCP 行为说明）。
+6. **浏览器内核（航班抓取）**：携程反爬 WAF 需要可见浏览器，安装时让用户在 **A = Edge（默认）/ B = Chrome** 中选择，或提供自定义浏览器路径（见 §4.1 的 C 项）。
 
 ## 1. 检查运行环境
 
@@ -137,13 +137,15 @@ question: "你有滴滴出行 MCP 的 API Key 吗？（⚠ 不要粘贴在聊天
     - 等用户拿到 Key 后继续
 ```
 
-**C. VARIFLIGHT API Key（可选）**
+**C. 浏览器内核选择（航班抓取，A/B）**
 
 ```
-question: "你有 VariFlight API Key 吗？（可选，用于航班备选数据源）"
+question: "选择航班抓取使用的浏览器内核？（携程反爬需要可见浏览器）"
 选项:
-  - "我有 Key" → 用户输入值后，同时写入 FlightTicketMCP/.env 的 VARIFLIGHT_API_KEY
-  - "跳过，不用 VariFlight" → 跳过，航班查询会优先使用携程数据源
+  - "A. Edge（默认，Windows 自带即可）" → 写入 FLIGHT_MCP_BROWSER=edge
+  - "B. Chrome" → 写入 FLIGHT_MCP_BROWSER=chrome
+  - "自定义路径" → 写入 FLIGHT_MCP_BROWSER_PATH=<浏览器绝对路径>
+说明: 查询时会以最小化窗口打开浏览器（任务栏可见，不抢前台）；无头模式会被携程拦截，默认不启用。
 ```
 
 ### 4.2 生成 .env 文件
@@ -174,27 +176,15 @@ DIDI_MCP_KEY=用户提供的滴滴Key
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
+# 浏览器内核：A=edge（默认）/ B=chrome
+FLIGHT_MCP_BROWSER=edge
+# 自定义浏览器路径（可选，优先于 FLIGHT_MCP_BROWSER）
+# FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# 无头模式（不推荐：会被携程 whaleguard 拦截）
+# FLIGHT_MCP_HEADLESS=1
 ```
 
-如果用户提供了 VariFlight Key，从模板复制：
-
-Windows PowerShell：
-
-```powershell
-Copy-Item FlightTicketMCP/.env.example FlightTicketMCP/.env
-```
-
-macOS / Linux：
-
-```bash
-cp FlightTicketMCP/.env.example FlightTicketMCP/.env
-```
-
-再写入：
-
-```dotenv
-VARIFLIGHT_API_KEY=用户提供的VariFlightKey
-```
+> **Windows 路径注意**：网关注入的环境变量中，相对路径会按**子进程的工作目录**解析（例如 `FLIGHT_MCP_PYTHON_COMMAND` 相对路径会拼接到 `FLIGHT_MCP_PROJECT_ROOT` 下）。为确保任何启动方式都可用，请为 `FLIGHT_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH` 使用**绝对路径**（示例：`C:/Users/xxx/.../FlightTicketMCP/.venv/Scripts/python.exe`）。
 
 > **安全警告**：**永远不要在回复中打印真实密钥**；不要提交 `.env` 到 git；写文件后立刻验证 `.env` 是否在 `.gitignore` 中。
 
@@ -261,48 +251,59 @@ node build/index.js
 1. 检查 `.env` 和客户端配置中的变量名是否一致。
 2. 检查 `npm run build` 是否成功。
 3. 检查 `FlightTicketMCP` 依赖是否已安装。
-4. 高德、滴滴、VariFlight 的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
-5. 不要输出完整环境变量、token、真实密钥或私人账号数据。
+4. 高德、滴滴的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
+5. 航班查询失败时优先调用 `gateway_get_config` 查看 provider 连接状态与浏览器策略（引擎、无头标志、浏览器路径覆盖）；浏览器相关错误常见原因：未安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 选错内核、`FLIGHT_MCP_HEADLESS=1` 被携程拦截。
+6. 不要输出完整环境变量、token、真实密钥或私人账号数据。
 
 ## 8. 部署后功能测试
 
-配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。使用网关提供的 MCP 工具执行以下测试，确保各域下游连接正常。
+配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。最快的方式是调用网关自检工具 `gateway_health_check`（无参数时逐域探测，返回 PASS/FAIL 与样例）；如需了解运行时状态可先调用 `gateway_get_config`。以下为逐域手工验证方式。
+
+> 工具名说明：网关返回的工具名为 `{domain}_{provider}_{tool}` 形式（如 `train_12306_get_tickets`）；宿主界面可能显示额外前缀（Claude Code 中为 `mcp__travel-mcp-gateway__`）。以 `gateway_list_retained_tools` 返回的 `gatewayName` 为准。
 
 ### 8.1 获取当前日期
 
-调用 `travel-mcp-gateway_train_12306_get_current_date`（或 `travel-mcp-gateway_flight_flight_ticket_mcp_server_getCurrentDate`）获取当天日期 `yyyy-MM-dd`，用于后续查询。
+调用 `train_12306_get_current_date`（或 `flight_flight_ticket_mcp_server_getCurrentDate`）获取当天日期 `yyyy-MM-dd`，用于后续查询。
 
 ### 8.2 测试火车票查询（train 域）
 
 查询当天从 **上海** 到 **北京** 的高铁票：
 
-- 工具：`travel-mcp-gateway_train_12306_get_tickets`
-- 参数：`date` = 当天日期，`fromStation` = "上海"，`toStation` = "北京"，`trainFilterFlags` = "G"，`limitedNum` = 3
-- 格式：`text`
+- 工具：`train_12306_get_tickets`
+- 参数：`date` = 当天日期，`fromStation` = "上海"，`toStation` = "北京"，`trainFilterFlags` = "G"，`limitedNum` = 3，`format` = "text"
 
-预期：返回高铁车次列表。若连接失败或 `station_code` 解析有误，检查 `.env` 中 `TRAIN_12306_ENTRY` 是否指向正确的 `12306-mcp/build/index.js`。
+预期：返回高铁车次列表。若连接失败或 `station_code` 解析有误，检查 `.env` 中 `TRAIN_12306_ENTRY` 是否指向正确的 `12306-mcp/build/index.js`。联程/中转查询可用 `train_12306_get_interline_tickets`（12306 联程路径已随上游改版修复）。
 
 ### 8.3 测试航班查询（flight 域）
 
 查询当天从 **上海** 到 **北京** 的航班：
 
-- 工具：`travel-mcp-gateway_flight_flight_ticket_mcp_server_searchFlightRoutes`
-- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 当天日期
-- 格式：`text`
+- 工具：`flight_flight_ticket_mcp_server_searchFlightRoutes`
+- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 当天日期，`data_source_preference` = "default"（可选 `auto`；不存在 `format` 参数）；可选时间过滤：`earliestStartTime` / `latestStartTime`（0-23）/ `earliestArrivalTime` / `latestArrivalTime`
+- 返回：JSON 文本，含 `status`、`flight_count`、`flights`、`formatted_output` 等字段
 
-预期：返回航班列表。若失败，检查 `FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。
+预期：返回航班列表（需 1–8 分钟；期间会短暂出现一个**最小化浏览器窗口**（任务栏可见），不抢前台）。若失败，检查：本机是否安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 内核选择、`FLIGHT_MCP_HEADLESS` 是否为 1（会被携程拦截）、`FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。注意：网关**不提供**航班中转工具。
 
 ### 8.4 测试地图工具（map 域）
 
-调用 `travel-mcp-gateway_map_amap_maps_geo` 将 "北京南站" 解析为经纬度坐标：
+调用 `map_amap_maps_geo` 将 "北京南站" 解析为经纬度坐标：
 
 - 参数：`address` = "北京南站"，`city` = "北京"
 
 预期：返回经纬度坐标。若失败，检查 `AMAP_MAPS_API_KEY` 是否有效。
 
-### 8.5 测试结果汇总
+### 8.5 测试网约车（taxi 域）
 
-向用户报告四项测试结果，格式如下：
+按顺序调用：
+
+1. `taxi_didi_maps_textsearch`：参数 `keywords` = "北京南站"，`city` = "北京"（两者均为必填）
+2. `taxi_didi_taxi_estimate`：参数 `from_name`/`from_lng`/`from_lat`/`to_name`/`to_lng`/`to_lat`——经纬度必须取自第 1 步 textsearch 返回的坐标，不能凭空假设
+
+预期：返回多车型预估价格（仅估价，不会下单）。
+
+### 8.6 测试结果汇总
+
+向用户报告测试结果，格式如下：
 
 ```
 | 域    | 工具                        | 状态 | 备注               |
@@ -310,6 +311,7 @@ node build/index.js
 | train | get_tickets (上海→北京)      | ✅/❌ | 返回 N 趟车次       |
 | flight| searchFlightRoutes (上海→北京)| ✅/❌ | 返回 N 个航班       |
 | map   | maps_geo (北京南站)          | ✅/❌ | 坐标: lng, lat     |
+| taxi  | maps_textsearch (北京南站)   | ✅/❌ | 返回 N 个地点       |
 ```
 
 若所有域均通过，安装成功。若任一域失败，参考 §7 排障。

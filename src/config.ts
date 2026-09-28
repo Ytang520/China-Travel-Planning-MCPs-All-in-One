@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,13 +27,26 @@ export type RuntimeConfig = {
   didiMcpKey?: string;
 };
 
+const readProjectVersion = (workspaceRoot: string) => {
+  const packageJsonPath = resolve(workspaceRoot, "package.json");
+  const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
+    version?: string;
+  };
+
+  if (!packageJson.version) {
+    throw new Error(`Missing version in ${packageJsonPath}`);
+  }
+
+  return packageJson.version;
+};
+
 export const getRuntimeConfig = (): RuntimeConfig => {
   const workspaceRoot = resolve(currentDir, "..");
 
   return {
     workspaceRoot,
     projectName: "travel-mcp-gateway",
-    projectVersion: "0.1.0",
+    projectVersion: readProjectVersion(workspaceRoot),
     inheritedEnv: normalizeEnv(process.env),
     train12306Entry:
       process.env.TRAIN_12306_ENTRY ??

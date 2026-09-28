@@ -90,7 +90,7 @@ NAME_STATIONS: Record<string, { station_code: string; station_name: string }>
   - 输入：出发站id、到达站id、中转站id、是否显示无座、车次类型筛选
   - 参数处理：检查日期不早于当前日期，验证车站id存在性, 构造请求入参
   - Cookie 处理：先获取 12306 Cookie 用于身份验证
-  - API 调用：访问 `/lcquery/queryU` 接口
+  - API 调用：访问 `/lcquery/queryG` 接口（路径从 `lcQuery/init` 页面的 `lc_search_url` 动态解析）
   - 数据处理, 车次类型筛选
   - 返回格式化数据
 

@@ -8,10 +8,13 @@ export const createFlightTicketProvider = (
     domain: "flight",
     providerName: "flight_ticket_mcp_server",
     displayName: "Flight Ticket MCP Server",
-    description: "Flight search, transfer, weather, and real-time flight tools.",
+    description: "Flight search, weather, and real-time flight tools.",
     enabled: true,
     retainInReadme: true,
-    requestTimeout: 600_000, // 10 min — flight scraping via headless Chrome can take 3-8 min
+    // Hidden: direct flights only; the transfer tool relies on an unstable
+    // selenium scraping chain.
+    excludeTools: ["getTransferFlightsByThreePlace"],
+    requestTimeout: 600_000, // 10 min — Ctrip scraping via visible browser can take 3-8 min
     transport: {
       kind: "stdio",
       command: config.flightPythonCommand,

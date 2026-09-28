@@ -11,10 +11,12 @@ import type {
   DomainName,
   DownstreamProviderDefinition,
   GatewayToolInventory,
+  ProviderConnectionResult,
 } from "./types.js";
 import {
   connectAndRegisterProvider,
   createInventorySchema,
+  summarizeInputSchema,
 } from "./utils/downstreamClient.js";
 
 const config = getRuntimeConfig();
@@ -46,7 +48,55 @@ const createEmptyInventory = (): GatewayToolInventory => {
   };
 };
 
-const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
+const serializeInventory = (inventory: GatewayToolInventory) => {
+  return Object.fromEntries(
+    (
+      Object.entries(inventory) as [
+        DomainName,
+        GatewayToolInventory[DomainName],
+      ][]
+    ).map(([domain, providers]) => [
+      domain,
+      providers.map((provider) => ({
+        providerName: provider.providerName,
+        displayName: provider.displayName,
+        description: provider.description,
+        tools: provider.tools.map((tool) => ({
+          gatewayName: tool.gatewayName,
+          downstreamName: tool.downstreamName,
+          description: tool.description,
+          ...summarizeInputSchema(tool.inputSchema),
+        })),
+      })),
+    ]),
+  );
+};
+
+const HEALTH_PROBES: Record<
+  Exclude<DomainName, "flight">,
+  { match: RegExp; args: Record<string, unknown>; hint: string }
+> = {
+  train: {
+    match: /get[-_]current[-_]date$/i,
+    args: {},
+    hint: "12306 current-date tool",
+  },
+  map: {
+    match: /maps_geo$/i,
+    args: { address: "北京南站", city: "北京" },
+    hint: "Amap geocoding",
+  },
+  taxi: {
+    match: /maps_textsearch$/i,
+    args: { keywords: "北京南站", city: "北京" },
+    hint: "DiDi place search",
+  },
+};
+
+const registerInventoryFeatures = (
+  inventory: GatewayToolInventory,
+  connections: ProviderConnectionResult[],
+) => {
   server.registerResource(
     "gateway-inventory",
     "gateway://inventory",
@@ -61,7 +111,7 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
         contents: [
           {
             uri: uri.href,
-            text: JSON.stringify(inventory, null, 2),
+            text: JSON.stringify(serializeInventory(inventory), null, 2),
             mimeType: "application/json",
           },
         ],
@@ -74,7 +124,7 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
     {
       title: "List Retained Tools",
       description:
-        "Return the retained gateway tools grouped by train, flight, map, and taxi domains.",
+        "Return the retained gateway tools grouped by train, flight, map, and taxi domains, including parameter summaries derived from each tool's input schema.",
       inputSchema: createInventorySchema(),
       annotations: {
         readOnlyHint: true,
@@ -82,6 +132,7 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
       },
     },
     async (args) => {
+      const serialized = serializeInventory(inventory);
       if (args.domain) {
         return {
           content: [
@@ -89,7 +140,7 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
               type: "text",
               text: JSON.stringify(
                 {
-                  [args.domain]: inventory[args.domain as DomainName],
+                  [args.domain]: serialized[args.domain as DomainName],
                 },
                 null,
                 2,
@@ -103,9 +154,188 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
         content: [
           {
             type: "text",
-            text: JSON.stringify(inventory, null, 2),
+            text: JSON.stringify(serialized, null, 2),
           },
         ],
+      };
+    },
+  );
+
+  server.registerTool(
+    "gateway_get_config",
+    {
+      title: "Gateway Runtime Config",
+      description:
+        "Return redacted runtime configuration: provider connectivity, retained tools, browser strategy, entry points, and data-source notes. Secrets are reported only as set/unset.",
+      inputSchema: z.object({}),
+      annotations: {
+        readOnlyHint: true,
+        idempotentHint: true,
+      },
+    },
+    async () => {
+      const env = process.env;
+      const connectionByProvider = new Map(
+        connections.map((c) => [
+          `${c.provider.domain}/${c.provider.providerName}`,
+          c,
+        ]),
+      );
+      const providers = getProviders().map((provider) => {
+        const connection = connectionByProvider.get(
+          `${provider.domain}/${provider.providerName}`,
+        );
+        return {
+          domain: provider.domain,
+          providerName: provider.providerName,
+          displayName: provider.displayName,
+          enabled: provider.enabled,
+          transportKind: provider.transport.kind,
+          connected: Boolean(connection),
+          retainedToolCount: connection?.registeredTools.length ?? 0,
+          retainedTools:
+            connection?.registeredTools.map((t) => t.gatewayName) ?? [],
+          hiddenTools: provider.excludeTools ?? [],
+          includeTools: provider.includeTools,
+          requestTimeoutMs: provider.requestTimeout ?? 60000,
+        };
+      });
+
+      const payload = {
+        project: {
+          name: config.projectName,
+          version: config.projectVersion,
+          workspaceRoot: config.workspaceRoot,
+        },
+        command: {
+          node: process.version,
+          flightPythonCommand: config.flightPythonCommand,
+          train12306Entry: config.train12306Entry,
+        },
+        browser: {
+          engine: (env.FLIGHT_MCP_BROWSER ?? "edge").toLowerCase(),
+          headless: env.FLIGHT_MCP_HEADLESS === "1",
+          browserPathOverride: env.FLIGHT_MCP_BROWSER_PATH ? "set" : "unset",
+          note: "Ctrip (flights.ctrip.com) blocks headless browsers (whaleguard HTTP 432); default is a silent, non-focused visible window.",
+        },
+        secrets: {
+          AMAP_MAPS_API_KEY: config.amapApiKey ? "set" : "unset",
+          DIDI_MCP_KEY: config.didiMcpKey ? "set" : "unset",
+        },
+        dataSourceNotes: [
+          "flight: Ctrip web scraping only (visible browser required, 3-8 min per query)",
+          "train: 12306 direct + interline tickets (interline uses the lc_search_url-resolved path)",
+          "taxi: call taxi_didi_maps_textsearch before taxi_didi_taxi_estimate",
+        ],
+        providers,
+      };
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    "gateway_health_check",
+    {
+      title: "Gateway Health Check",
+      description:
+        "Run lightweight per-domain probes through the downstream providers (train: current date; map: geocoding; taxi: place search; flight: connectivity only — no scraping). Returns PASS/FAIL with samples.",
+      inputSchema: createInventorySchema(),
+      annotations: {
+        readOnlyHint: true,
+      },
+    },
+    async (args) => {
+      const domains: DomainName[] = args.domain
+        ? [args.domain as DomainName]
+        : ["train", "flight", "map", "taxi"];
+
+      const results: Array<Record<string, unknown>> = [];
+      for (const domain of domains) {
+        const connection = connections.find(
+          (c) => c.provider.domain === domain,
+        );
+        if (!connection) {
+          results.push({
+            domain,
+            status: "FAIL",
+            error: "provider disabled or not connected",
+          });
+          continue;
+        }
+
+        if (domain === "flight") {
+          results.push({
+            domain,
+            status: "PASS",
+            mode: "connectivity-only",
+            provider: connection.provider.providerName,
+            retainedToolCount: connection.registeredTools.length,
+            note: "live flight search needs a visible browser and takes minutes",
+          });
+          continue;
+        }
+
+        const probe = HEALTH_PROBES[domain];
+        const downstreamTool = connection.tools.find((t) =>
+          probe.match.test(t.name),
+        );
+        if (!downstreamTool) {
+          results.push({
+            domain,
+            status: "FAIL",
+            provider: connection.provider.providerName,
+            error: "probe tool not exposed by provider",
+          });
+          continue;
+        }
+
+        const startedAt = Date.now();
+        try {
+          const result = await connection.client.callTool(
+            { name: downstreamTool.name, arguments: probe.args },
+            undefined,
+            {
+              timeout: Math.min(
+                connection.provider.requestTimeout ?? 60000,
+                30000,
+              ),
+            },
+          );
+          const text = (
+            (result.content ?? []) as Array<{ type?: string; text?: string }>
+          )
+            .map((c) =>
+              c.type === "text" && c.text !== undefined
+                ? c.text
+                : JSON.stringify(c),
+            )
+            .join("\n");
+          const ok =
+            !result.isError && !/"status"\s*:\s*"error"/.test(text);
+          results.push({
+            domain,
+            status: ok ? "PASS" : "FAIL",
+            provider: connection.provider.providerName,
+            tool: downstreamTool.name,
+            elapsedMs: Date.now() - startedAt,
+            sample: text.slice(0, 300),
+          });
+        } catch (error) {
+          results.push({
+            domain,
+            status: "FAIL",
+            provider: connection.provider.providerName,
+            tool: downstreamTool.name,
+            error: String(error),
+          });
+        }
+      }
+
+      return {
+        content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
       };
     },
   );
@@ -114,6 +344,7 @@ const registerInventoryFeatures = (inventory: GatewayToolInventory) => {
 const start = async () => {
   const providers = getProviders();
   const inventory = createEmptyInventory();
+  const connections: ProviderConnectionResult[] = [];
 
   for (const provider of providers) {
     try {
@@ -121,6 +352,7 @@ const start = async () => {
       if (!connection) {
         continue;
       }
+      connections.push(connection);
 
       inventory[provider.domain].push({
         providerName: provider.providerName,
@@ -136,7 +368,7 @@ const start = async () => {
     }
   }
 
-  registerInventoryFeatures(inventory);
+  registerInventoryFeatures(inventory, connections);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
