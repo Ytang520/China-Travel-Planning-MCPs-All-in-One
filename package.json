@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "license": "MIT",
-  "description": "A unified travel MCP gateway for train, flight, map, and taxi providers.",
+  "description": "A unified travel MCP gateway for train, flight, hotel, map, and taxi providers.",
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",

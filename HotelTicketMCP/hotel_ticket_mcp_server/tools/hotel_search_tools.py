@@ -175,7 +175,7 @@ def _resolve_city_via_ui(page, city):
     try:
         page.get("https://hotels.ctrip.com/hotels/", timeout=90)
         time.sleep(4)
-        inputs = page.eles("css:input[type='text'], css:input:not([type])", timeout=8)
+        inputs = page.eles("css:input[type='text'], input:not([type])", timeout=8)
         box = None
         for el in inputs[:5]:
             try:
@@ -438,6 +438,16 @@ def searchHotels(
         if login_err:
             return login_err
 
+        # 登录判定通过但列表容器缺失 → 可能被反爬拦截或页面结构变化
+        try:
+            has_list = page.ele("css:.hotel-list", timeout=10) is not None
+        except Exception:  # pragma: no cover - ele 超时抛错视为未渲染
+            has_list = False
+        if not has_list:
+            return _error(
+                "SCRAPING_FAILED", "酒店列表未渲染（可能被拦截或页面结构变化）"
+            )
+
         # 首屏随机停驻，模拟阅读
         time.sleep(random.uniform(1.5, 4.0))
 
@@ -457,7 +467,7 @@ def searchHotels(
             }
 
         if len(hotels) < int(limit):
-            warnings.append(f"列表已到底，仅返回 {len(hotels)} 家")
+            warnings.append(f"仅返回 {len(hotels)} 家（列表加载到底或筛选后不足）")
 
         formatted = _format_output(hotels, city, checkin, checkout, location)
         formatted += "\n\n🧾 数据源: ctrip_web_scraping"

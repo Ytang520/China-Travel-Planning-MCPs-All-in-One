@@ -35,10 +35,12 @@ def test_to_injectable_maps_fields():
         "domain": ".ctrip.com",
         "path": "/",
         "httpOnly": True,
+        "secure": False,
     }
-    # domain 缺省为 .ctrip.com；httpOnly 缺省为 False
+    # domain 缺省为 .ctrip.com；httpOnly/secure 缺省为 False
     assert out[2]["domain"] == ".ctrip.com"
     assert out[2]["httpOnly"] is False
+    assert out[2]["secure"] is False
     assert out[2]["path"] == "/"
 
 

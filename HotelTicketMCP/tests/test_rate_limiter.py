@@ -60,7 +60,10 @@ def test_second_search_waits_random_delay():
     assert result["reason"] == "rate_limit"
     assert result["delay_seconds"] == pytest.approx(expected)
     assert result["waited_seconds"] == pytest.approx(max(0.0, expected - 5))
-    assert sleep.calls == [result["waited_seconds"]] if result["waited_seconds"] > 0 else sleep.calls == []
+    if result["waited_seconds"] > 0:
+        assert sleep.calls == [result["waited_seconds"]]
+    else:
+        assert sleep.calls == []
 
 
 def test_no_wait_when_delay_already_elapsed():

@@ -13,6 +13,17 @@ DEFAULT_MIN_DELAY = 30.0
 DEFAULT_MAX_DELAY = 300.0
 
 
+def _env_float(name, default):
+    """读取延迟环境变量：空值/非法值静默回退默认值（避免子进程因配置笔误而崩溃）。"""
+    try:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            return default
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 class SearchRateLimiter:
     def __init__(
         self,
@@ -25,12 +36,12 @@ class SearchRateLimiter:
         self.min_delay = float(
             min_delay
             if min_delay is not None
-            else os.environ.get("HOTEL_MCP_MIN_DELAY", DEFAULT_MIN_DELAY)
+            else _env_float("HOTEL_MCP_MIN_DELAY", DEFAULT_MIN_DELAY)
         )
         self.max_delay = float(
             max_delay
             if max_delay is not None
-            else os.environ.get("HOTEL_MCP_MAX_DELAY", DEFAULT_MAX_DELAY)
+            else _env_float("HOTEL_MCP_MAX_DELAY", DEFAULT_MAX_DELAY)
         )
         if self.min_delay < 0 or self.max_delay < self.min_delay:
             raise ValueError(

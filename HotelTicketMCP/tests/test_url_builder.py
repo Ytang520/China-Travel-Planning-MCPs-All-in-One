@@ -15,6 +15,8 @@ def test_city_only_url():
     params = qs(result["url"])
     assert params["cityId"] == ["477"]
     assert params["cityName"] == [unquote("%E6%AD%A6%E6%B1%89")]
+    # 原始查询串必须保留 URL 编码（防止 quote() 被误删）
+    assert "cityName=%E6%AD%A6%E6%B1%89" in result["url"]
     assert params["checkin"] == ["2026-10-01"]
     assert params["checkout"] == ["2026-10-03"]
     assert params["crn"] == ["1"]

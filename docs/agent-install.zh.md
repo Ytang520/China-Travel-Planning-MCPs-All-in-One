@@ -217,8 +217,8 @@ HOTEL_MCP_BROWSER=edge
 # 无头模式（不推荐：会被携程 whaleguard 拦截）
 # FLIGHT_MCP_HEADLESS=1
 # HOTEL_MCP_HEADLESS=1
-# ⚠ 酒店搜索风险同意（D 项选择"启用"时写入 yes；不启用则整个 hotel 域不可用）
-HOTEL_MCP_CONSENT=yes
+# ⚠ 酒店搜索风险同意（仅在 §4.1 D 项用户选择"启用"时取消注释并写 yes；不启用则整个 hotel 域不可用）
+# HOTEL_MCP_CONSENT=yes
 # 两次酒店搜索之间的随机间隔范围（秒，默认 30~300）
 # HOTEL_MCP_MIN_DELAY=30
 # HOTEL_MCP_MAX_DELAY=300

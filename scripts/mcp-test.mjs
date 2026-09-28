@@ -306,7 +306,7 @@ try {
         checkout,
         limit: 5,
       },
-      540000,
+      900000,
     );
     printText(text, 4000);
   }

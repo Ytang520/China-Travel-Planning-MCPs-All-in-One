@@ -44,6 +44,7 @@ HotelTicketMCP/.browser-profile/
 HotelTicketMCP/ctrip-hotel-cookies.json
 HotelTicketMCP/logs/
 HotelTicketMCP/.pytest-tmp/
+.pytest_cache/
 
 # Ctrip cookie captures / scraping artifacts (personal login data, never commit)
 ctrip-cookies.json

@@ -129,7 +129,7 @@ const registerInventoryFeatures = (
     {
       title: "List Retained Tools",
       description:
-        "Return the retained gateway tools grouped by train, flight, map, and taxi domains, including parameter summaries derived from each tool's input schema.",
+        "Return the retained gateway tools grouped by train, flight, hotel, map, and taxi domains, including parameter summaries derived from each tool's input schema.",
       inputSchema: createInventorySchema(),
       annotations: {
         readOnlyHint: true,
@@ -268,7 +268,7 @@ const registerInventoryFeatures = (
     {
       title: "Gateway Health Check",
       description:
-        "Run lightweight per-domain probes through the downstream providers (train: current date; map: geocoding; taxi: place search; flight: connectivity only — no scraping). Returns PASS/FAIL with samples.",
+        "Run lightweight per-domain probes through the downstream providers (train: current date; map: geocoding; taxi: place search; flight and hotel: connectivity only — no scraping). Returns PASS/FAIL with samples.",
       inputSchema: createInventorySchema(),
       annotations: {
         readOnlyHint: true,

@@ -7,6 +7,7 @@ login tools (both gated by the HOTEL_MCP_CONSENT risk-consent switch).
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 
@@ -156,7 +157,9 @@ def register_tools():
             limit=limit,
         )
 
-    @mcp.tool()
+    # 下游工具名固定为 login，使网关注册名为 hotel_ctrip_login
+    # （网关命名规则为 {domain}_{provider}_{toolName}）
+    @mcp.tool(name="login")
     def ctripHotelLogin():
         """携程酒店登录助手 - 打开可见浏览器窗口，等待用户手动完成携程登录，
         然后把登录 cookie 保存到本地文件供后续搜索复用（最多等待 5 分钟）。

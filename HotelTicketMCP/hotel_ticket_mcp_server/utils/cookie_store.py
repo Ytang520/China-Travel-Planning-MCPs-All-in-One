@@ -50,7 +50,7 @@ def save_cookies(cookies, path=None):
 
 
 def to_injectable(cookies):
-    """cookie dict 列表 → DrissionPage set.cookies 可接受的格式（含 httpOnly）。"""
+    """cookie dict 列表 → DrissionPage set.cookies 可接受的格式（含 httpOnly/secure）。"""
     out = []
     for c in cookies:
         out.append(
@@ -60,6 +60,7 @@ def to_injectable(cookies):
                 "domain": c.get("domain") or ".ctrip.com",
                 "path": c.get("path") or "/",
                 "httpOnly": bool(c.get("httpOnly")),
+                "secure": bool(c.get("secure")),
             }
         )
     return out

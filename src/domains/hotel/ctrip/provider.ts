@@ -12,7 +12,7 @@ export const createCtripHotelProvider = (
       "Ctrip hotel search via web scraping. Requires Ctrip login and explicit risk consent (HOTEL_MCP_CONSENT=yes); searches are throttled by a random 30s-5min interval to reduce ban risk.",
     enabled: true,
     retainInReadme: true,
-    requestTimeout: 600_000, // 10 min — browser scraping + optional rate-limit wait
+    requestTimeout: 900_000, // 15 min — 限速等待(≤300s) + 登录注入导航 + 浏览器抓取
     transport: {
       kind: "stdio",
       command: config.hotelPythonCommand,

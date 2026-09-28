@@ -217,8 +217,8 @@ HOTEL_MCP_BROWSER=edge
 # Headless mode (not recommended: blocked by Ctrip whaleguard)
 # FLIGHT_MCP_HEADLESS=1
 # HOTEL_MCP_HEADLESS=1
-# ⚠ Hotel search risk consent (set yes only if the user chose "Enable" in §4.1 D)
-HOTEL_MCP_CONSENT=yes
+# ⚠ Hotel search risk consent (uncomment and set yes only if the user chose "Enable" in §4.1 D)
+# HOTEL_MCP_CONSENT=yes
 # Random interval between hotel searches in seconds (default 30~300)
 # HOTEL_MCP_MIN_DELAY=30
 # HOTEL_MCP_MAX_DELAY=300
