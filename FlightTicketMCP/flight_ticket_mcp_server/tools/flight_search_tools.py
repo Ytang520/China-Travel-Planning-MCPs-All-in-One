@@ -10,6 +10,9 @@ import json
 import os
 import random
 import logging
+import shutil
+import socket
+import tempfile
 import time
 import re
 
@@ -46,6 +49,13 @@ CHROME_CANDIDATES = [
     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
 ]
+
+
+def _free_port() -> int:
+    """Bind an ephemeral port and return it (DrissionPage set_local_port 用)。"""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def _resolve_browser_path() -> Optional[str]:
@@ -97,9 +107,12 @@ class FlightRouteSearcher:
         self.base_url = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
 
         co = ChromiumOptions()
-        # Port 9222 can be occupied by a non-DevTools Chrome instance;
-        # let DrissionPage pick a free port instead.
-        co.auto_port()
+        # 显式全新临时 profile（每查必新）：保证航班查询永远处于未登录状态，
+        # 不依赖 DrissionPage PortFinder 的端口-目录复用行为。
+        # 注意：set_user_data_path 必须配合 set_local_port（单独使用会因 address 为空崩溃）。
+        co.set_local_port(_free_port())
+        self._profile_dir = tempfile.mkdtemp(prefix="flightctrip-profile-")
+        co.set_user_data_path(self._profile_dir)
         browser_path = _resolve_browser_path()
         if browser_path:
             co.set_browser_path(browser_path)
@@ -118,6 +131,12 @@ class FlightRouteSearcher:
             co.set_argument('--disable-renderer-backgrounding')
             co.set_argument('--disable-background-timer-throttling')
         self.page = ChromiumPage(co)
+        # 兜底：清空浏览器内全部 cookie，双保险确保航班查询永远未登录
+        # （即使未来 profile 策略变化，也不会把任何登录态带进航班抓取）。
+        try:
+            self.page.run_cdp("Network.clearBrowserCookies")
+        except Exception as e:
+            logger.warning("清理浏览器 cookie 失败（可忽略）: %s", e)
 
         logger.info("航班路线查询器初始化完成")
         self.last_parse_status = "not_started"
@@ -1043,6 +1062,9 @@ class FlightRouteSearcher:
         if hasattr(self, "page"):
             self.page.quit()
             logger.info("浏览器已关闭")
+        profile_dir = getattr(self, "_profile_dir", None)
+        if profile_dir:
+            shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 def searchFlightRoutes(

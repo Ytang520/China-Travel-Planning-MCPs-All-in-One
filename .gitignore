@@ -5,6 +5,7 @@ build/
 .env.*.local
 .mcp.json
 log.txt
+.venv/
 .DS_Store
 Thumbs.db
 .idea/
@@ -36,5 +37,16 @@ FlightTicketMCP/.env
 FlightTicketMCP/.venv/
 FlightTicketMCP/.idea/
 FlightTicketMCP/*.egg-info/
+
+HotelTicketMCP/.env
+HotelTicketMCP/.venv/
+HotelTicketMCP/.browser-profile/
+HotelTicketMCP/ctrip-hotel-cookies.json
+HotelTicketMCP/logs/
+HotelTicketMCP/.pytest-tmp/
+
+# Ctrip cookie captures / scraping artifacts (personal login data, never commit)
+ctrip-cookies.json
+edge_hotels.json
 
 12306-mcp/node_modules/

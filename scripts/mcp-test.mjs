@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const MODES = ["health", "config", "train", "flight", "map", "taxi"];
+const MODES = ["health", "config", "train", "flight", "hotel", "map", "taxi"];
 const NAMED_SECRETS = new Set(["AMAP_MAPS_API_KEY", "DIDI_MCP_KEY"]);
 
 const unquote = (value) => {
@@ -118,6 +118,19 @@ const localDate = () => {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const addDays = (dateStr, days) => {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const date = new Date(year, month - 1, day + days);
+  return localDateFor(date);
+};
+
+const localDateFor = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
@@ -275,6 +288,23 @@ try {
         destination_city: "北京",
         departure_date: date,
         data_source_preference: "default",
+      },
+      540000,
+    );
+    printText(text, 4000);
+  }
+
+  if (mode === "hotel") {
+    const checkin = addDays(localDate(), 7);
+    const checkout = addDays(localDate(), 9);
+    printText(`checkin: ${checkin} / checkout: ${checkout}`, 80);
+    const { text } = await callTool(
+      "hotel_ctrip_searchHotels",
+      {
+        city: "武汉",
+        checkin,
+        checkout,
+        limit: 5,
       },
       540000,
     );

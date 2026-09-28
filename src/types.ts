@@ -1,4 +1,4 @@
-export type DomainName = "train" | "flight" | "map" | "taxi";
+export type DomainName = "train" | "flight" | "hotel" | "map" | "taxi";
 
 export type StdioTransportConfig = {
   kind: "stdio";

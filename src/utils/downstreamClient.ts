@@ -154,7 +154,7 @@ export const connectAndRegisterProvider = async (
 
 export const createInventorySchema = () =>
   z.object({
-    domain: z.enum(["train", "flight", "map", "taxi"]).optional(),
+    domain: z.enum(["train", "flight", "hotel", "map", "taxi"]).optional(),
   });
 
 type JsonSchemaProperty = {

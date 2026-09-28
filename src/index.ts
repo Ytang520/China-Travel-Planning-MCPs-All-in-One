@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { getRuntimeConfig } from "./config.js";
 import { getFlightProviders } from "./domains/flight/registry.js";
+import { getHotelProviders } from "./domains/hotel/registry.js";
 import { getMapProviders } from "./domains/map/registry.js";
 import { getTaxiProviders } from "./domains/taxi/registry.js";
 import { getTrainProviders } from "./domains/train/registry.js";
@@ -26,7 +27,8 @@ const server = new McpServer({
   name: config.projectName,
   version: config.projectVersion,
   description:
-    "This gateway unifies train, flight, map, and taxi MCP tools. " +
+    "This gateway unifies train, flight, hotel, map, and taxi MCP tools. " +
+    "Hotel search requires Ctrip login and explicit risk consent (HOTEL_MCP_CONSENT=yes). " +
     "For taxi fare estimates, always use taxi_didi_maps_textsearch before taxi_didi_taxi_estimate. " +
     "For other map and route tasks, prefer map_amap_* tools.",
 });
@@ -35,6 +37,7 @@ const getProviders = (): DownstreamProviderDefinition[] => {
   return [
     ...getTrainProviders(config),
     ...getFlightProviders(config),
+    ...getHotelProviders(config),
     ...getMapProviders(config),
     ...getTaxiProviders(config),
   ];
@@ -44,6 +47,7 @@ const createEmptyInventory = (): GatewayToolInventory => {
   return {
     train: [],
     flight: [],
+    hotel: [],
     map: [],
     taxi: [],
   };
@@ -74,7 +78,7 @@ const serializeInventory = (inventory: GatewayToolInventory) => {
 };
 
 const HEALTH_PROBES: Record<
-  Exclude<DomainName, "flight">,
+  Exclude<DomainName, "flight" | "hotel">,
   { match: RegExp; args: Record<string, unknown>; hint: string }
 > = {
   train: {
@@ -225,6 +229,7 @@ const registerInventoryFeatures = (
         command: {
           node: process.version,
           flightPythonCommand: toPublicPath(config.flightPythonCommand),
+          hotelPythonCommand: toPublicPath(config.hotelPythonCommand),
           train12306Entry: toPublicPath(config.train12306Entry),
         },
         browser: {
@@ -233,12 +238,19 @@ const registerInventoryFeatures = (
           browserPathOverride: env.FLIGHT_MCP_BROWSER_PATH ? "set" : "unset",
           note: "Ctrip (flights.ctrip.com) blocks headless browsers (whaleguard HTTP 432); default is a silent, non-focused visible window.",
         },
+        hotelBrowser: {
+          engine: (env.HOTEL_MCP_BROWSER ?? "edge").toLowerCase(),
+          headless: env.HOTEL_MCP_HEADLESS === "1",
+          consent: (env.HOTEL_MCP_CONSENT ?? "no").toLowerCase() === "yes" ? "yes" : "no",
+          note: "hotels.ctrip.com requires Ctrip login (guest is redirected to passport); searches are rate-limited by a random 30s-5min interval.",
+        },
         secrets: {
           AMAP_MAPS_API_KEY: config.amapApiKey ? "set" : "unset",
           DIDI_MCP_KEY: config.didiMcpKey ? "set" : "unset",
         },
         dataSourceNotes: [
-          "flight: Ctrip web scraping only (visible browser required, 3-8 min per query)",
+          "flight: Ctrip web scraping only (visible browser required, 3-8 min per query); flight browser always runs logged-out",
+          "hotel: Ctrip web scraping, login required (HOTEL_MCP_CONSENT=yes to enable); random 30s-5min interval between searches",
           "train: 12306 direct + interline tickets (interline uses the lc_search_url-resolved path)",
           "taxi: call taxi_didi_maps_textsearch before taxi_didi_taxi_estimate",
         ],
@@ -265,7 +277,7 @@ const registerInventoryFeatures = (
     async (args) => {
       const domains: DomainName[] = args.domain
         ? [args.domain as DomainName]
-        : ["train", "flight", "map", "taxi"];
+        : ["train", "flight", "hotel", "map", "taxi"];
 
       const results: Array<Record<string, unknown>> = [];
       for (const domain of domains) {
@@ -289,6 +301,18 @@ const registerInventoryFeatures = (
             provider: connection.provider.providerName,
             retainedToolCount: connection.registeredTools.length,
             note: "live flight search needs a visible browser and takes minutes",
+          });
+          continue;
+        }
+
+        if (domain === "hotel") {
+          results.push({
+            domain,
+            status: "PASS",
+            mode: "connectivity-only",
+            provider: connection.provider.providerName,
+            retainedToolCount: connection.registeredTools.length,
+            note: "hotel search needs Ctrip login (HOTEL_MCP_CONSENT=yes) and a visible browser; searches are rate-limited 30s-5min",
           });
           continue;
         }

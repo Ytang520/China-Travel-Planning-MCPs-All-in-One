@@ -23,6 +23,8 @@ export type RuntimeConfig = {
   train12306Entry: string;
   flightProjectRoot: string;
   flightPythonCommand: string;
+  hotelProjectRoot: string;
+  hotelPythonCommand: string;
   amapApiKey?: string;
   didiMcpKey?: string;
 };
@@ -55,6 +57,10 @@ export const getRuntimeConfig = (): RuntimeConfig => {
       process.env.FLIGHT_MCP_PROJECT_ROOT ??
       resolve(workspaceRoot, "FlightTicketMCP"),
     flightPythonCommand: process.env.FLIGHT_MCP_PYTHON_COMMAND ?? "python",
+    hotelProjectRoot:
+      process.env.HOTEL_MCP_PROJECT_ROOT ??
+      resolve(workspaceRoot, "HotelTicketMCP"),
+    hotelPythonCommand: process.env.HOTEL_MCP_PYTHON_COMMAND ?? "python",
     amapApiKey: process.env.AMAP_MAPS_API_KEY,
     didiMcpKey: process.env.DIDI_MCP_KEY,
   };
