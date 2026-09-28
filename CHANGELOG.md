@@ -10,6 +10,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新业务域 `hotel`：`HotelTicketMCP` 子项目（Python，FastMCP + DrissionPage）通过可见浏览器抓取携程酒店列表。工具：`hotel_ctrip_searchHotels`（城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选，排序 smart/price_asc/distance/score_desc，limit≤50）、`hotel_ctrip_login`（打开可见窗口手动登录并保存 cookie）。
+- 登录态三层流程：浏览器单例持久 profile（同实例免注入）→ cookie 文件注入（含 HttpOnly，`set.cookies` 原生支持）→ `LOGIN_REQUIRED` 停止并引导用户登录。登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），不依赖具体会员身份文本。
+- 防封机制：两次酒店搜索间随机 30s~5min 间隔（`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；人性化滚动（随机步幅 ≥0.45 视口、随机停顿、偶发回滚与鼠标移动；双指标连续 3 轮零增长判底）；浏览器单飞锁 + 按 profile 路径精确清理自身残留进程。
+- 风险同意开关 `HOTEL_MCP_CONSENT`：未同意时酒店工具返回 `CONSENT_REQUIRED`；安装流程新增交互询问（封禁风险明示，自愿承担，作者概不负责）。
+- 网关：`gateway_health_check` 支持 hotel（connectivity-only）；`gateway_get_config` 新增 hotelBrowser 段；`scripts/mcp-test.mjs` 新增 `hotel` 模式。
+- HotelTicketMCP 单元测试 26 项（限速/cookie 存储/城市字典/URL 构造/登录判定/卡片解析；pytest basetemp 固定在项目内，规避系统 TEMP 权限问题）。
+
+### Changed
+
+- 航班浏览器 profile 加固：`FlightRouteSearcher` 改为每次查询显式全新临时 profile（`set_local_port` + `set_user_data_path(mkdtemp())`）并在启动时清空浏览器 cookie，保证航班抓取永远未登录（此前依赖 PortFinder 端口-目录复用行为，属隐式保证）。
+- 网关启动日志、工具清单、安装指南与排障文档同步覆盖 hotel 域。
+
+### Security
+
+- `.gitignore` 新增：`HotelTicketMCP/.venv/`、`.browser-profile/`、`ctrip-hotel-cookies.json`、`logs/`、`.pytest-tmp/`、根目录 `ctrip-cookies.json`、`edge_hotels.json`——酒店登录 cookie 与浏览器 profile 永不入库。
+
 ## [0.2.0] - 2026-09-28
 
 ### Added
