@@ -257,7 +257,23 @@ node build/index.js
 
 ## 8. 部署后功能测试
 
-配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。最快的方式是调用网关自检工具 `gateway_health_check`（无参数时逐域探测，返回 PASS/FAIL 与样例）；如需了解运行时状态可先调用 `gateway_get_config`。以下为逐域手工验证方式。
+配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。**不要手写测试脚本。** 使用仓库内的 `scripts/mcp-test.mjs`（Windows、macOS、Linux 命令相同）。在仓库根目录执行：
+
+```bash
+npm run check
+```
+
+这会运行 `health`（调用 `gateway_health_check`，任一项 FAIL 时进程退出码为 1）。其它模式：
+
+```bash
+node scripts/mcp-test.mjs config
+node scripts/mcp-test.mjs train
+node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs map
+node scripts/mcp-test.mjs taxi
+```
+
+`flight` 会打开可见浏览器，通常需要数分钟。脚本读取根目录 `.env`，不会打印密钥；密钥值替换为 `[redacted]`，用户目录和仓库绝对路径替换为 `<home>`、`<repo>`。`config` 对应 `gateway_get_config`：密钥只显示 set/unset，路径只保留仓库内相对路径。不要把脚本输出提交到 git。以下为逐域手工对照。
 
 > 工具名说明：网关返回的工具名为 `{domain}_{provider}_{tool}` 形式（如 `train_12306_get_tickets`）；宿主界面可能显示额外前缀（Claude Code 中为 `mcp__travel-mcp-gateway__`）。以 `gateway_list_retained_tools` 返回的 `gatewayName` 为准。
 

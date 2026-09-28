@@ -257,7 +257,23 @@ For MCP connection, authentication, schema, or response-format issues:
 
 ## 8. Post-deployment smoke test
 
-After configuration is complete, verify the four domains (train / flight / map / taxi) are working. The fastest way is the gateway self-check tool `gateway_health_check` (no arguments = probe every domain; returns PASS/FAIL plus samples); call `gateway_get_config` first if you need runtime state. Manual per-domain checks follow.
+After configuration is complete, verify the four domains (train / flight / map / taxi) are working. **Do not write a new test script.** Use the repo script `scripts/mcp-test.mjs` (same command on Windows, macOS, and Linux). From the repository root:
+
+```bash
+npm run check
+```
+
+That runs `health` (`gateway_health_check`; the process exits 1 if any probe is FAIL). Other modes:
+
+```bash
+node scripts/mcp-test.mjs config
+node scripts/mcp-test.mjs train
+node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs map
+node scripts/mcp-test.mjs taxi
+```
+
+`flight` opens a visible browser and usually takes several minutes. The script reads the root `.env` and does not print secrets. Secret values are replaced with `[redacted]`; the user home directory and repository absolute path are replaced with `<home>` and `<repo>`. `config` calls `gateway_get_config`, which reports secrets only as set/unset and paths only relative to the repository. Do not commit script output. Manual per-domain checks follow.
 
 > Tool naming: gateway tool names use the `{domain}_{provider}_{tool}` form (e.g. `train_12306_get_tickets`); hosts may display an extra prefix (`mcp__travel-mcp-gateway__` in Claude Code). Use the `gatewayName` values returned by `gateway_list_retained_tools`.
 

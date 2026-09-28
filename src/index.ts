@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
 
 import { getRuntimeConfig } from "./config.js";
@@ -201,16 +202,30 @@ const registerInventoryFeatures = (
         };
       });
 
+      const toPublicPath = (target: string) => {
+        if (!isAbsolute(target)) {
+          return target.replaceAll("\\", "/");
+        }
+        const relativePath = relative(resolve(config.workspaceRoot), resolve(target));
+        if (relativePath === "") {
+          return ".";
+        }
+        if (relativePath.startsWith("..") || isAbsolute(relativePath)) {
+          return "<outside-workspace>";
+        }
+        return relativePath.replaceAll("\\", "/");
+      };
+
       const payload = {
         project: {
           name: config.projectName,
           version: config.projectVersion,
-          workspaceRoot: config.workspaceRoot,
+          workspaceRoot: ".",
         },
         command: {
           node: process.version,
-          flightPythonCommand: config.flightPythonCommand,
-          train12306Entry: config.train12306Entry,
+          flightPythonCommand: toPublicPath(config.flightPythonCommand),
+          train12306Entry: toPublicPath(config.train12306Entry),
         },
         browser: {
           engine: (env.FLIGHT_MCP_BROWSER ?? "edge").toLowerCase(),
