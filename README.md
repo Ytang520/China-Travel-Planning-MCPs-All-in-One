@@ -134,6 +134,8 @@ node build/index.js
 
 ## 更新记录
 
+本次及历史变更写在 [CHANGELOG.md](CHANGELOG.md)。推送 `vX.Y.Z` 标签后，会自动生成对应的 [GitHub Release](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/releases)。
+
 ## 致谢
 
 本仓库在能力与设计上参考或继承了下列开源项目与公开材料（上游许可证以其各自仓库为准）：
