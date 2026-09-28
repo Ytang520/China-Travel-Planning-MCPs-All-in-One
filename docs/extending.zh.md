@@ -78,7 +78,7 @@
 - `train_12306_get_interline_tickets`
 - `train_12306_get_train_route_stations`
 
-覆盖日期辅助、车站编码、余票、中转与经停站查询。
+覆盖日期辅助、车站编码、余票、中转与经停站查询。联程路径已随 12306 上游改版修复（解析 `lc_search_url` 动态路径）。
 
 ### `flight/flight_ticket_mcp_server`
 
@@ -86,7 +86,6 @@
 
 - `flight_flight_ticket_mcp_server_searchFlightRoutes`
 - `flight_flight_ticket_mcp_server_getCurrentDate`
-- `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`
 - `flight_flight_ticket_mcp_server_getWeatherByLocation`
 - `flight_flight_ticket_mcp_server_getWeatherByCity`
 - `flight_flight_ticket_mcp_server_getFlightStatus`
@@ -94,7 +93,7 @@
 - `flight_flight_ticket_mcp_server_getFlightsInArea`
 - `flight_flight_ticket_mcp_server_trackMultipleFlights`
 
-覆盖航班搜索、联程中转、天气与实时航班状态等。
+覆盖航班搜索、天气与实时航班状态等。已隐藏 `getTransferFlightsByThreePlace`：抓取链路不稳定，网关予以排除（仅直达）。
 
 ### `map/amap`
 
@@ -200,9 +199,11 @@ transport: {
 ## 网关内置辅助
 
 - 资源：`gateway://inventory`
-- 工具：`gateway_list_retained_tools`
+- 工具：`gateway_list_retained_tools`（含每个工具的参数摘要）
+- 工具：`gateway_get_config`（脱敏运行态配置，密钥仅 set/unset）
+- 工具：`gateway_health_check`（按域轻量探测，可选 `domain` 参数）
 
-用于查看已启用的 provider 与聚合后保留的工具列表。
+用于在不读源码的前提下查看已启用的 provider、保留工具、浏览器策略与各域健康状态。
 
 ## OpenCode 与错误处理 Skill
 

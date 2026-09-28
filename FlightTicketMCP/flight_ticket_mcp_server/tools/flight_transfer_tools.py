@@ -20,11 +20,6 @@ from ..core.flights import (
     FlightTransfer,
 )
 
-try:
-    from . import variflight_tools
-except ImportError:
-    variflight_tools = None
-
 # 初始化日志器
 logger = logging.getLogger(__name__)
 
@@ -58,56 +53,24 @@ def getTransferFlightsByThreePlace(
     )
 
     normalized_preference = (data_source_preference or "auto").strip().lower()
-    if normalized_preference not in {"auto", "default", "variflight"}:
+    if normalized_preference == "variflight":
         return {
             "status": "error",
-            "message": "data_source_preference 仅支持 auto、default、variflight",
+            "message": "VariFlight 数据源已下线，请使用 auto/default（航信网网页数据源）",
+            "error_code": "DATA_SOURCE_REMOVED",
+            "data_source": "system",
+        }
+    if normalized_preference not in {"auto", "default"}:
+        return {
+            "status": "error",
+            "message": "data_source_preference 仅支持 auto、default",
             "error_code": "INVALID_DATA_SOURCE_PREFERENCE",
             "data_source": "system",
         }
 
-    def use_variflight_fallback(primary_error: Dict[str, Any]) -> Dict[str, Any]:
-        if normalized_preference == "default" or not variflight_tools:
-            return primary_error
-
-        fallback_result = variflight_tools.getTransferFlightsByThreePlace(
-            from_place=from_place,
-            transfer_place=transfer_place,
-            to_place=to_place,
-            departure_date=departure_date or datetime.now().strftime("%Y-%m-%d"),
-            min_transfer_time=min_transfer_time,
-            max_transfer_time=max_transfer_time,
-        )
-        if fallback_result.get("status") == "success":
-            fallback_result["primary_error"] = primary_error
-            fallback_result["message"] = "主数据源失败，已切换到 Variflight 备选方案"
-            return fallback_result
-
-        primary_error["fallback_error"] = fallback_result
-        return primary_error
-
     try:
         if not departure_date:
             departure_date = datetime.now().strftime("%Y-%m-%d")
-
-        if normalized_preference == "variflight":
-            if not variflight_tools:
-                return {
-                    "status": "error",
-                    "message": "Variflight 数据源不可用",
-                    "error_code": "VARIFLIGHT_NOT_AVAILABLE",
-                    "data_source": "system",
-                }
-            direct_result = variflight_tools.getTransferFlightsByThreePlace(
-                from_place=from_place,
-                transfer_place=transfer_place,
-                to_place=to_place,
-                departure_date=departure_date,
-                min_transfer_time=min_transfer_time,
-                max_transfer_time=max_transfer_time,
-            )
-            direct_result["requested_data_source"] = "variflight"
-            return direct_result
 
         # 获取所有城市的三字码
         from_code = _get_location_codev2(from_place)
@@ -115,18 +78,16 @@ def getTransferFlightsByThreePlace(
         to_code = _get_location_codev2(to_place)
 
         if not from_code or not transfer_code or not to_code:
-            return use_variflight_fallback(
-                {
-                    "status": "error",
-                    "message": "城市或机场代码解析失败",
-                    "error_code": "LOCATION_CODE_LOOKUP_FAILED",
-                    "from_place": from_place,
-                    "transfer_place": transfer_place,
-                    "to_place": to_place,
-                    "data_source": "chahangxian_web_scraping",
-                    "query_time": datetime.now().isoformat(),
-                }
-            )
+            return {
+                "status": "error",
+                "message": "城市或机场代码解析失败",
+                "error_code": "LOCATION_CODE_LOOKUP_FAILED",
+                "from_place": from_place,
+                "transfer_place": transfer_place,
+                "to_place": to_place,
+                "data_source": "chahangxian_web_scraping",
+                "query_time": datetime.now().isoformat(),
+            }
 
         logger.info(
             f"三字码查询成功！始发地: {from_code}，中转地{transfer_code}， 目的地: {to_code}"
@@ -137,18 +98,16 @@ def getTransferFlightsByThreePlace(
         after_trips = _get_direct_airline(transfer_code, to_code)
 
         if first_trips is None or after_trips is None:
-            return use_variflight_fallback(
-                {
-                    "status": "error",
-                    "message": "中转航班页面抓取失败",
-                    "error_code": "SCRAPING_FAILED",
-                    "from_place": from_place,
-                    "transfer_place": transfer_place,
-                    "to_place": to_place,
-                    "data_source": "chahangxian_web_scraping",
-                    "query_time": datetime.now().isoformat(),
-                }
-            )
+            return {
+                "status": "error",
+                "message": "中转航班页面抓取失败",
+                "error_code": "SCRAPING_FAILED",
+                "from_place": from_place,
+                "transfer_place": transfer_place,
+                "to_place": to_place,
+                "data_source": "chahangxian_web_scraping",
+                "query_time": datetime.now().isoformat(),
+            }
         logger.info(
             f"行程分段查询成功！ {from_place} - {transfer_place} {len(first_trips)}"
         )
@@ -221,7 +180,7 @@ def getTransferFlightsByThreePlace(
             "query_time": datetime.now().isoformat(),
         }
 
-        return use_variflight_fallback(primary_error)
+        return primary_error
 
 
 def _get_location_code(place: str) -> str:

@@ -30,20 +30,6 @@
       ]
     },
     {
-      "id": "variflight",
-      "provider": "VariFlight MCP",
-      "domains": ["flight", "flight-status", "aviation"],
-      "description": "VariFlight MCP，面向航班查询、航班动态或航旅数据相关能力，可作为 FlightTicketMCP 航班数据源排障参考。",
-      "triggers": ["VARIFLIGHT_API_KEY", "variflight", "VariFlight", "飞常准", "flight", "flight_ticket_mcp_server"],
-      "urls": [
-        {
-          "label": "VariFlight MCP",
-          "url": "https://mcp.variflight.com/",
-          "usage": "用于核对 VariFlight MCP 入口、航班数据能力、鉴权或服务可用性相关线索。"
-        }
-      ]
-    },
-    {
       "id": "12306",
       "provider": "12306",
       "domains": ["train", "railway", "ticket"],

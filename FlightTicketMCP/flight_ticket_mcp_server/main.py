@@ -255,7 +255,7 @@ def register_tools():
         earliestArrivalTime: Optional[int] = None,
         latestArrivalTime: Optional[int] = None,
     ):
-        """航班路线查询 - 根据出发地、目的地和出发日期查询可用航班信息。data_source_preference支持auto/default/variflight：auto优先当前默认数据源，失败后回退Variflight；default强制默认数据源；variflight强制使用Variflight。earliestStartTime/latestStartTime设置最早/最晚出发小时(0-23/1-24)，earliestArrivalTime/latestArrivalTime设置最早/最晚到达小时(0-23/1-24)。"""
+        """航班路线查询 - 根据出发地、目的地和出发日期查询可用航班信息。data_source_preference支持auto/default（均使用携程网页数据源，需要可见浏览器）。earliestStartTime/latestStartTime设置最早/最晚出发小时(0-23/1-24)，earliestArrivalTime/latestArrivalTime设置最早/最晚到达小时(0-23/1-24)。"""
         logger.debug(
             f"调用航班路线查询工具: departure_city={departure_city}, destination_city={destination_city}, departure_date={departure_date}, data_source_preference={data_source_preference}, earliestStartTime={earliestStartTime}, latestStartTime={latestStartTime}, earliestArrivalTime={earliestArrivalTime}, latestArrivalTime={latestArrivalTime}"
         )
@@ -287,7 +287,7 @@ def register_tools():
         max_transfer_time: float = 5.0,
         data_source_preference: str = "auto",
     ):
-        """航班中转路线查询 - 根据出发地、中转地、目的地、最小转机时间、最大转机时间查询中转航班信息，最小转机时间默认为2小时，最大转机时间默认为5小时。data_source_preference支持auto/default/variflight。"""
+        """航班中转路线查询 - 根据出发地、中转地、目的地、最小转机时间、最大转机时间查询中转航班信息，最小转机时间默认为2小时，最大转机时间默认为5小时。data_source_preference支持auto/default（航信网网页数据源）。"""
         logger.debug(
             f"调用航班中转查询工具：: from_place={from_place}, transfer_place={transfer_place}, to_place={to_place}, data_source_preference={data_source_preference}"
         )

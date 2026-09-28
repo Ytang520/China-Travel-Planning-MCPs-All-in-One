@@ -66,19 +66,22 @@ Query tools from `12306-mcp`:
 - `train_12306_get_interline_tickets`
 - `train_12306_get_train_route_stations`
 
+Direct and interline (transfer) queries are both supported; the interline path follows 12306's current `lc_search_url` resolution.
+
 ### `flight/flight_ticket_mcp_server`
 
 Query tools from `FlightTicketMCP`:
 
 - `flight_flight_ticket_mcp_server_searchFlightRoutes`
 - `flight_flight_ticket_mcp_server_getCurrentDate`
-- `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`
 - `flight_flight_ticket_mcp_server_getWeatherByLocation`
 - `flight_flight_ticket_mcp_server_getWeatherByCity`
 - `flight_flight_ticket_mcp_server_getFlightStatus`
 - `flight_flight_ticket_mcp_server_getAirportFlights`
 - `flight_flight_ticket_mcp_server_getFlightsInArea`
 - `flight_flight_ticket_mcp_server_trackMultipleFlights`
+
+Hidden: `getTransferFlightsByThreePlace` — unstable scraping chain; the gateway excludes it. Direct flights only.
 
 ### `map/amap`
 
@@ -172,9 +175,11 @@ Use `includeTools` / `excludeTools`. `taxi/didi` keeps only `maps_textsearch` an
 ## Built-in gateway helpers
 
 - Resource: `gateway://inventory`
-- Tool: `gateway_list_retained_tools`
+- Tool: `gateway_list_retained_tools` (includes per-tool parameter summaries)
+- Tool: `gateway_get_config` (redacted runtime config; secrets as set/unset)
+- Tool: `gateway_health_check` (per-domain light probes, optional `domain` arg)
 
-Use these to inspect enabled providers and retained tools.
+Use these to inspect enabled providers, retained tools, browser strategy, and domain health without reading source code.
 
 ## OpenCode and error-processing skill
 

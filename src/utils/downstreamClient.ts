@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import { getRuntimeConfig } from "../config.js";
 import type {
   DownstreamProviderDefinition,
   DownstreamToolDefinition,
@@ -65,9 +66,11 @@ const createTransport = (provider: DownstreamProviderDefinition) => {
 };
 
 const createClient = () => {
+  const { projectName, projectVersion } = getRuntimeConfig();
+
   return new Client({
-    name: "travel-mcp-gateway",
-    version: "0.1.0",
+    name: projectName,
+    version: projectVersion,
   });
 };
 
@@ -137,6 +140,7 @@ export const connectAndRegisterProvider = async (
       gatewayName,
       downstreamName: tool.name,
       description: tool.description,
+      inputSchema: tool.inputSchema,
     });
   }
 
@@ -144,6 +148,7 @@ export const connectAndRegisterProvider = async (
     provider,
     tools: retainedTools,
     registeredTools,
+    client,
   };
 };
 
@@ -151,3 +156,42 @@ export const createInventorySchema = () =>
   z.object({
     domain: z.enum(["train", "flight", "map", "taxi"]).optional(),
   });
+
+type JsonSchemaProperty = {
+  type?: string | string[];
+  description?: string;
+  enum?: unknown[];
+};
+
+/**
+ * Compress a downstream tool's JSON input schema into an agent-friendly
+ * parameter summary so callers don't need to read source to learn arguments.
+ */
+export const summarizeInputSchema = (
+  schema?: Record<string, unknown>,
+  descriptionLimit = 160,
+) => {
+  const properties = (schema?.properties ?? {}) as Record<
+    string,
+    JsonSchemaProperty
+  >;
+  const required = Array.isArray(schema?.required)
+    ? (schema.required as string[])
+    : [];
+  const requiredSet = new Set(required);
+  const truncate = (value?: string) =>
+    value && value.length > descriptionLimit
+      ? `${value.slice(0, descriptionLimit)}…`
+      : value;
+
+  return {
+    parameters: Object.entries(properties).map(([name, prop]) => ({
+      name,
+      type: Array.isArray(prop.type) ? prop.type.join("|") : prop.type ?? "any",
+      required: requiredSet.has(name),
+      ...(prop.enum ? { enum: prop.enum } : {}),
+      ...(prop.description ? { description: truncate(prop.description) } : {}),
+    })),
+    required,
+  };
+};

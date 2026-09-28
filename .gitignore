@@ -3,6 +3,8 @@ build/
 .env
 .env.local
 .env.*.local
+.mcp.json
+log.txt
 .DS_Store
 Thumbs.db
 .idea/

@@ -29,7 +29,20 @@ const API_BASE = 'https://kyfw.12306.cn';
 const SEARCH_API_BASE = 'https://search.12306.cn';
 const WEB_URL = 'https://www.12306.cn/index/';
 const LCQUERY_INIT_URL = 'https://kyfw.12306.cn/otn/lcQuery/init';
-const LCQUERY_PATH = await getLCQueryPath();
+const BROWSER_UA =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36';
+// 12306 要求请求携带浏览器 UA/Accept-Language 等头（否则 302 到登录页），
+// 且页面中 lc_search_url 的缩进不固定（制表符/空格混用），旧的字面量正则无法匹配。
+// 解析失败时保留非致命降级，避免阻塞服务启动；降级值为当前真实路径。
+let LCQUERY_PATH = '/lcquery/queryG';
+try {
+    LCQUERY_PATH = await getLCQueryPath();
+} catch (error) {
+    console.error(
+        'Warning: failed to resolve 12306 lcQuery path, using default path:',
+        error
+    );
+}
 const MISSING_STATIONS: StationData[] = [
     {
         station_id: '@cdd',
@@ -284,8 +297,7 @@ async function getCookie() {
             const response = await axios.get(url, {
                 timeout: 20000,
                 headers: {
-                    'User-Agent':
-                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36',
+                    'User-Agent': BROWSER_UA,
                 },
             });
             const setCookieHeader = response.headers['set-cookie'];
@@ -794,7 +806,12 @@ async function make12306Request<T>(
 ): Promise<T | null> {
     try {
         const response = await axios.get(url + '?' + scheme.toString(), {
-            headers: headers,
+            timeout: 20000,
+            headers: {
+                'User-Agent': BROWSER_UA,
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                ...headers,
+            },
         });
         return (await response.data) as T;
     } catch (error) {
@@ -1081,7 +1098,7 @@ server.tool(
             'leftTicketDTO.to_station': toStation,
             purpose_codes: 'ADULT',
         });
-        const queryUrl = `${API_BASE}/otn/leftTicket/query`;
+        const queryUrl = new URL(await resolveLeftTicketPath(), API_BASE).toString();
         const cookies = await getCookie();
         if (cookies == null || Object.entries(cookies).length === 0) {
             return {
@@ -1308,7 +1325,7 @@ server.tool(
         fromStation = fromStationResult;
         toStation = toStationResult;
         middleStation = middleStationResult ? middleStationResult : '';
-        const queryUrl = `${API_BASE}${LCQUERY_PATH}`;
+        const queryUrl = new URL(LCQUERY_PATH, API_BASE).toString();
         const cookies = await getCookie();
         if (cookies == null || Object.entries(cookies).length === 0) {
             return {
@@ -1562,15 +1579,84 @@ async function getStations(): Promise<Record<string, StationData>> {
 }
 
 async function getLCQueryPath(): Promise<string> {
-    const html = await make12306Request<string>(LCQUERY_INIT_URL);
+    // 12306 的 lcQuery/init 页面在缺少浏览器头时 302 到登录页；且 lc_search_url
+    // 的缩进不固定（制表符/空格混用），必须用宽松正则匹配。附带 cookie 链更稳妥。
+    const cookies = await getCookie();
+    const headers: Record<string, string> = {
+        Accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        Referer: `${API_BASE}/otn/leftTicket/init`,
+    };
+    if (cookies && Object.entries(cookies).length > 0) {
+        headers.Cookie = formatCookies(cookies);
+    }
+    const html = await make12306Request<string>(
+        LCQUERY_INIT_URL,
+        new URLSearchParams(),
+        headers
+    );
     if (html == null) {
-        throw new Error('Error: get 12306 web page failed.');
+        throw new Error('Error: get 12306 lcQuery init page failed.');
     }
-    const match = html.match(/ var lc_search_url = '(.+?)'/);
+    const match = html.match(/\blc_search_url\s*=\s*'([^']+)'/);
     if (match == null) {
-        throw new Error('Error: get station name js file failed.');
+        throw new Error(
+            'Error: lc_search_url not found in lcQuery/init page.'
+        );
     }
-    return match[1];
+    const raw = match[1].trim();
+    if (/^https?:\/\//.test(raw)) {
+        return raw;
+    }
+    if (raw.startsWith('//')) {
+        // 协议相对路径：固定为 https，避免被换主
+        return `https:${raw}`;
+    }
+    // Host-root relative path (e.g. '/lcquery/queryG'), do NOT prefix /otn/.
+    return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+const LEFT_TICKET_INIT_URL = 'https://kyfw.12306.cn/otn/leftTicket/init';
+const DEFAULT_LEFT_TICKET_PATH = '/otn/leftTicket/query'; // 该路径会 302 到 queryG，axios 自动跟随
+let LEFT_TICKET_PATH: string | null = null; // cache only successful resolutions
+
+async function getLeftTicketPath(): Promise<string> {
+    // 上游 12306 将余票查询接口改为从 leftTicket/init 动态下发 CLeftTicketUrl
+    // (当前值为 leftTicket/queryG)；硬编码路径会在下次改版时失效。
+    const html = await make12306Request<string>(LEFT_TICKET_INIT_URL);
+    if (html == null) {
+        throw new Error('Error: get 12306 leftTicket init page failed.');
+    }
+    const match = html.match(/\bCLeftTicketUrl\s*=\s*'([^']+)'/);
+    if (match == null) {
+        throw new Error('Error: CLeftTicketUrl not found in leftTicket/init.');
+    }
+    const raw = match[1].trim();
+    if (/^https?:\/\//.test(raw)) {
+        return raw;
+    }
+    if (raw.startsWith('//')) {
+        // 协议相对路径：固定为 https，避免被换主
+        return `https:${raw}`;
+    }
+    const path = raw.startsWith('/') ? raw : `/${raw}`;
+    return path.startsWith('/otn/') ? path : `/otn/${path.replace(/^\/+/, '')}`;
+}
+
+async function resolveLeftTicketPath(): Promise<string> {
+    if (LEFT_TICKET_PATH) {
+        return LEFT_TICKET_PATH;
+    }
+    try {
+        LEFT_TICKET_PATH = await getLeftTicketPath();
+    } catch (error) {
+        console.error(
+            'Warning: failed to resolve 12306 CLeftTicketUrl, using default query path:',
+            error
+        );
+        return DEFAULT_LEFT_TICKET_PATH; // do not cache the fallback
+    }
+    return LEFT_TICKET_PATH;
 }
 
 async function init() {}

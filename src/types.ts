@@ -56,12 +56,16 @@ export type RegisteredGatewayTool = {
   gatewayName: string;
   downstreamName: string;
   description?: string;
+  /** Downstream JSON input schema, captured at registration time so agents can inspect params without reading source. */
+  inputSchema?: DownstreamToolDefinition["inputSchema"];
 };
 
 export type ProviderConnectionResult = {
   provider: DownstreamProviderDefinition;
   tools: DownstreamToolDefinition[];
   registeredTools: RegisteredGatewayTool[];
+  /** Live MCP client to the downstream server, used by gateway_health_check. */
+  client: import("@modelcontextprotocol/sdk/client/index.js").Client;
 };
 
 export type GatewayToolInventory = Record<

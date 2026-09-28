@@ -12,7 +12,8 @@
 
 - **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低多进程与多配置心智负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
-- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴、VariFlight 等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
+- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
+- **免读源码**：网关内置 `gateway_get_config`（脱敏运行态配置）、`gateway_health_check`（按域轻量探测）、`gateway_list_retained_tools`（含工具参数摘要），代理无需读源码即可了解能力与参数。
 
 ## 让 Agent 安装
 
@@ -58,11 +59,29 @@ node build/index.js
 |------|------|
 | `AMAP_MAPS_API_KEY` | 于 [高德 MCP Server](https://lbs.amap.com/api/mcp-server/summary) 处申请 Key，用于 `map/amap` |
 | `DIDI_MCP_KEY` | 于 [滴滴 MCP](https://mcp.didichuxing.com/) 处申请 Key，用于 `taxi/didi`（地点搜索 + 费用预估） |
-| `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（默认 `python`） |
+| `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（默认 `python`；使用 uv 环境时指向 `.venv/Scripts/python.exe`） |
 | `TRAIN_12306_ENTRY` | 可选，12306 MCP 入口脚本路径 |
 | `FLIGHT_MCP_PROJECT_ROOT` | 可选，`FlightTicketMCP` 根目录 |
+| `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：A=`edge`（默认）/ B=`chrome` |
+| `FLIGHT_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `FLIGHT_MCP_BROWSER`） |
+| `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程 whaleguard 拦截） |
 
-航班相关补充变量（含 VariFlight 备选所需的 `VARIFLIGHT_API_KEY`）见 `FlightTicketMCP/.env.example`，申请方式参考 [VariFlight MCP](https://mcp.variflight.com/)。
+航班相关补充变量见 `FlightTicketMCP/.env.example`。
+
+> **Windows 路径注意**：子进程以 `FLIGHT_MCP_PROJECT_ROOT` 为工作目录，相对路径会按子进程 cwd 解析；请为 `FLIGHT_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH` 使用绝对路径。
+
+### 浏览器依赖
+
+携程（flights.ctrip.com）的反爬 WAF（whaleguard）会拦截无头浏览器（HTTP 432）与无浏览器 HTTP 请求，因此**航班查询需要本机安装 Chrome 或 Edge**：
+
+- 安装时选择内核 **A = Edge（默认）/ B = Chrome**，通过 `FLIGHT_MCP_BROWSER` 配置；
+- 查询时默认以**最小化窗口**打开（任务栏可见，不抢占前台焦点）；
+- 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后会被携程拦截，航班查询将失败。
+
+### 直达与中转说明
+
+- 火车（train）：支持**直达**与**中转/联程**（`train_12306_get_interline_tickets`，12306 中转接口路径已随上游改版修复）；
+- 航班（flight）：**仅支持直达**，`flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`（航班中转）抓取链路不稳定，网关已隐藏该工具。
 
 ## MCP 客户端配置示例
 
@@ -107,13 +126,17 @@ node build/index.js
 
 ### 航班查询
 
-航班查询（默认 `auto`）：优先抓取携程网页航班列表；失败或缺少抓取依赖时，若已在 `FlightTicketMCP/.env` 配置 `VARIFLIGHT_API_KEY`，可回退到 VariFlight MCP
+航班查询（默认 `auto`，等价于 `default`）：抓取携程网页航班列表，通过**最小化可见浏览器**（任务栏可见）执行（详见上文「浏览器依赖」）。查询耗时 3–8 分钟，仅支持直达航班。
 
 ### Gateway MCP Server 与模型上下文的关系
 
 网关进程启动时会遍历各业务域的 provider，调用 `connectAndRegisterProvider`，把已成功连接且按规则保留的下游工具，统一注册到同一个 MCP Server（见 `src/index.ts`）
 
 若某个下游连接失败，该 provider 的工具不会出现在清单里（启动日志会有 `[gateway] failed to connect provider`）。
+
+## 更新记录
+
+本次及历史变更写在 [CHANGELOG.md](CHANGELOG.md)。推送 `vX.Y.Z` 标签后，会自动生成对应的 [GitHub Release](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/releases)。
 
 ## 致谢
 
