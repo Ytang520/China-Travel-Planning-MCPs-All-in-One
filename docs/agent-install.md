@@ -28,7 +28,8 @@ Ask where this MCP will run:
 
 4. **`AMAP_MAPS_API_KEY` (Amap maps MCP)**: If missing, point users to **[Amap MCP Server overview](https://lbs.amap.com/api/mcp-server/summary)**. Reference walk-through video (Chinese): [Bilibili · Amap MCP (BV1qwZqYJEUG)](https://www.bilibili.com/video/BV1qwZqYJEUG/).
 5. **`DIDI_MCP_KEY` (DiDi MCP)**: If missing, point users to **[DiDi MCP](https://mcp.didichuxing.com/)**. Reference walk-through video (Chinese): [Bilibili · DiDi MCP (BV1vpb7zaECv)](https://www.bilibili.com/video/BV1vpb7zaECv/).
-6. **Browser engine (flight scraping)**: Ctrip's anti-bot WAF requires a visible browser. At install time, ask the user to pick **A = Edge (default) / B = Chrome**, or provide a custom browser path (see item C in §4.1).
+6. **Browser engine (flight + hotel scraping)**: Ctrip's anti-bot WAF requires a visible browser. At install time, ask the user to pick **A = Edge (default) / B = Chrome**, or provide a custom browser path (see item C in §4.1). The choice applies to both flight and hotel scraping.
+7. **Hotel search risk consent (important)**: Hotel search scrapes login-gated Ctrip hotel data while mimicking human browsing, which **carries an account-ban risk**. You must explicitly ask the user whether to enable it (see item D in §4.1); **enabling means the user accepts the risk voluntarily and the author takes no responsibility**.
 
 ## 1. Check the runtime
 
@@ -78,6 +79,25 @@ Depending on the user's Python environment, this is also valid:
 ```bash
 cd FlightTicketMCP
 pip install -e .
+cd ..
+```
+
+## 3.6 Install hotel provider dependencies
+
+Same approach as the flight provider: **uv first**, pip only when the user insists.
+
+```bash
+cd HotelTicketMCP
+uv venv
+uv pip install -r requirements.txt
+cd ..
+```
+
+If `uv` is unavailable, use `pip`:
+
+```bash
+cd HotelTicketMCP
+pip install -r requirements.txt
 cd ..
 ```
 
@@ -137,15 +157,25 @@ options:
     - Wait for user to obtain a key before continuing
 ```
 
-**C. Browser engine choice (flight scraping, A/B)**
+**C. Browser engine choice (flight + hotel scraping, A/B)**
 
 ```
-question: "Which browser engine should flight scraping use? (Ctrip anti-bot requires a visible browser)"
+question: "Which browser engine should flight/hotel scraping use? (Ctrip anti-bot requires a visible browser; one choice covers both)"
 options:
-  - "A. Edge (default, ships with Windows)" → set FLIGHT_MCP_BROWSER=edge
-  - "B. Chrome" → set FLIGHT_MCP_BROWSER=chrome
-  - "Custom path" → set FLIGHT_MCP_BROWSER_PATH=<absolute browser path>
+  - "A. Edge (default, ships with Windows)" → set FLIGHT_MCP_BROWSER=edge and HOTEL_MCP_BROWSER=edge
+  - "B. Chrome" → set FLIGHT_MCP_BROWSER=chrome and HOTEL_MCP_BROWSER=chrome
+  - "Custom path" → set FLIGHT_MCP_BROWSER_PATH and HOTEL_MCP_BROWSER_PATH=<absolute browser path>
 Note: searches open a minimized window (taskbar-visible, no foreground focus); headless mode is blocked by Ctrip and disabled by default.
+```
+
+**D. Hotel search risk consent (important, must ask)**
+
+```
+question: "Enable Ctrip hotel search (hotel domain)? ⚠ This feature mimics human browsing and scrapes login-gated Ctrip hotel data, which carries a risk of account bans. Enabling it means you understand and voluntarily accept the risk; the author takes no responsibility."
+options:
+  - "Enable, I accept the risk" → set HOTEL_MCP_CONSENT=yes
+  - "Disable" → do not set HOTEL_MCP_CONSENT (or set no); hotel tools return CONSENT_REQUIRED
+Note: hotel searches wait a random 30s–5min between calls to reduce risk. Hotel data requires a Ctrip login; when a search returns LOGIN_REQUIRED, call hotel_ctrip_login so the user can log in.
 ```
 
 ### 4.2 Generate .env files
@@ -176,15 +206,25 @@ DIDI_MCP_KEY=user_didi_key
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
-# Browser engine: A=edge (default) / B=chrome
+# Browser engine: A=edge (default) / B=chrome (shared by flight and hotel)
 FLIGHT_MCP_BROWSER=edge
-# Custom browser path (optional, takes precedence over FLIGHT_MCP_BROWSER)
+HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP
+HOTEL_MCP_PYTHON_COMMAND=python
+HOTEL_MCP_BROWSER=edge
+# Custom browser path (optional, takes precedence over the engine vars)
 # FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# HOTEL_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
 # Headless mode (not recommended: blocked by Ctrip whaleguard)
 # FLIGHT_MCP_HEADLESS=1
+# HOTEL_MCP_HEADLESS=1
+# ⚠ Hotel search risk consent (set yes only if the user chose "Enable" in §4.1 D)
+HOTEL_MCP_CONSENT=yes
+# Random interval between hotel searches in seconds (default 30~300)
+# HOTEL_MCP_MIN_DELAY=30
+# HOTEL_MCP_MAX_DELAY=300
 ```
 
-> **Windows path note**: relative paths in gateway-injected env vars resolve against the **child process cwd** (e.g. a relative `FLIGHT_MCP_PYTHON_COMMAND` is joined under `FLIGHT_MCP_PROJECT_ROOT`). Use **absolute paths** for `FLIGHT_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, and `FLIGHT_MCP_BROWSER_PATH` (e.g. `C:/Users/xxx/.../FlightTicketMCP/.venv/Scripts/python.exe`).
+> **Windows path note**: relative paths in gateway-injected env vars resolve against the **child process cwd** (e.g. a relative `FLIGHT_MCP_PYTHON_COMMAND` is joined under `FLIGHT_MCP_PROJECT_ROOT`). Use **absolute paths** for `FLIGHT_MCP_PYTHON_COMMAND`, `HOTEL_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, `FLIGHT_MCP_BROWSER_PATH`, and `HOTEL_MCP_BROWSER_PATH` (e.g. `C:/Users/xxx/.../HotelTicketMCP/.venv/Scripts/python.exe`).
 
 > **Security**: **Never print real keys** in chat; verify `.env` is in `.gitignore` after writing.
 
@@ -205,6 +245,7 @@ This is a stdio MCP server. It will usually wait for MCP client messages; verify
 Expected startup logs should include at minimum:
 - `12306 MCP Server running on stdio`
 - `Flight Ticket MCP Server logging initialized`
+- `Hotel Ticket MCP Server starting...` (expected when §4.1 D was enabled)
 - `[gateway] travel MCP gateway running on stdio`
 
 ## 6. MCP client configuration
@@ -250,14 +291,16 @@ For MCP connection, authentication, schema, or response-format issues:
 
 1. Check that `.env` and the client config use the same variable names.
 2. Check that `npm run build` succeeds.
-3. Check that `FlightTicketMCP` dependencies are installed.
+3. Check that `FlightTicketMCP` and `HotelTicketMCP` dependencies are installed.
 4. For Amap and DiDi key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
 5. For flight failures, call `gateway_get_config` first to inspect provider connectivity and browser strategy (engine, headless flag, path override). Common browser-related causes: no Chrome/Edge installed, wrong `FLIGHT_MCP_BROWSER` engine, or `FLIGHT_MCP_HEADLESS=1` being blocked by Ctrip.
-6. Never print full environment dumps, tokens, real secrets, or private account data.
+6. Hotel search returning `CONSENT_REQUIRED`: the user has not consented to the risk terms (`.env` `HOTEL_MCP_CONSENT` is not `yes`); re-ask per §4.1 D.
+7. Hotel search returning `LOGIN_REQUIRED`: no login state and cookie injection failed. Call `hotel_ctrip_login` (opens a visible browser window), have the user log in manually (QR or password, up to 5 minutes); cookies are saved automatically for later searches.
+8. Never print full environment dumps, tokens, real secrets, or private account data.
 
 ## 8. Post-deployment smoke test
 
-After configuration is complete, verify the four domains (train / flight / map / taxi) are working. **Do not write a new test script.** Use the repo script `scripts/mcp-test.mjs` (same command on Windows, macOS, and Linux). From the repository root:
+After configuration is complete, verify the five domains (train / flight / hotel / map / taxi) are working. **Do not write a new test script.** Use the repo script `scripts/mcp-test.mjs` (same command on Windows, macOS, and Linux). From the repository root:
 
 ```bash
 npm run check
@@ -269,11 +312,12 @@ That runs `health` (`gateway_health_check`; the process exits 1 if any probe is 
 node scripts/mcp-test.mjs config
 node scripts/mcp-test.mjs train
 node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs hotel
 node scripts/mcp-test.mjs map
 node scripts/mcp-test.mjs taxi
 ```
 
-`flight` opens a visible browser and usually takes several minutes. The script reads the root `.env` and does not print secrets. Secret values are replaced with `[redacted]`; the user home directory and repository absolute path are replaced with `<home>` and `<repo>`. `config` calls `gateway_get_config`, which reports secrets only as set/unset and paths only relative to the repository. Do not commit script output. Manual per-domain checks follow.
+`flight` and `hotel` open a visible browser and usually take several minutes. The script reads the root `.env` and does not print secrets. Secret values are replaced with `[redacted]`; the user home directory and repository absolute path are replaced with `<home>` and `<repo>`. `config` calls `gateway_get_config`, which reports secrets only as set/unset and paths only relative to the repository. Do not commit script output. Manual per-domain checks follow.
 
 > Tool naming: gateway tool names use the `{domain}_{provider}_{tool}` form (e.g. `train_12306_get_tickets`); hosts may display an extra prefix (`mcp__travel-mcp-gateway__` in Claude Code). Use the `gatewayName` values returned by `gateway_list_retained_tools`.
 
@@ -300,7 +344,16 @@ Query flights from **Shanghai** to **Beijing** for today:
 
 Expected: A list of flights (takes 1–8 minutes; a **minimized browser window** appears briefly in the taskbar without stealing focus). If it fails, check: Chrome/Edge installed, `FLIGHT_MCP_BROWSER` engine choice, `FLIGHT_MCP_HEADLESS` must not be 1 (blocked by Ctrip), `FlightTicketMCP/.venv` exists, and `FLIGHT_MCP_PYTHON_COMMAND` is correct. Note: the flight transfer tool is intentionally absent.
 
-### 8.4 Test map geocoding (map domain)
+### 8.4 Test hotel search (hotel domain)
+
+Query future dates for Wuhan hotels (first search has no interval wait):
+
+- Tool: `hotel_ctrip_searchHotels`
+- Params: `city` = "武汉", `checkin`/`checkout` = today +7/+9 days, `limit` = 5
+
+Expected: A hotel list (`status: success`, `count`, `hotels[]`; takes ~1–2 minutes with a minimized browser window). If it returns `CONSENT_REQUIRED`, check `HOTEL_MCP_CONSENT=yes` in `.env` and the §4.1 D consent flow; if `LOGIN_REQUIRED`, call `hotel_ctrip_login` and have the user log in (login state is saved for reuse). Note: hotel searches are separated by a random 30s–5min interval, so a second consecutive test will wait.
+
+### 8.5 Test map geocoding (map domain)
 
 Call `map_amap_maps_geo` to geocode "北京南站":
 
@@ -308,7 +361,7 @@ Call `map_amap_maps_geo` to geocode "北京南站":
 
 Expected: Latitude/longitude coordinates. If it fails, check that `AMAP_MAPS_API_KEY` is valid.
 
-### 8.5 Test taxi (taxi domain)
+### 8.6 Test taxi (taxi domain)
 
 Call in order:
 
@@ -317,7 +370,7 @@ Call in order:
 
 Expected: fare estimates for multiple ride types (estimate only — no booking).
 
-### 8.6 Report results
+### 8.7 Report results
 
 Report the test results in this format:
 
@@ -326,6 +379,7 @@ Report the test results in this format:
 |--------|-------------------------------|--------|--------------------|
 | train  | get_tickets (Shanghai→Beijing) | ✅/❌  | N trains found     |
 | flight | searchFlightRoutes (Shanghai→Beijing) | ✅/❌ | N flights found    |
+| hotel  | searchHotels (Wuhan)          | ✅/❌  | N hotels found     |
 | map    | maps_geo (Beijing South)     | ✅/❌  | coords: lng, lat   |
 | taxi   | maps_textsearch (Beijing South) | ✅/❌ | N places found    |
 ```

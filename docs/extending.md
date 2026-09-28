@@ -16,6 +16,7 @@ For how the gateway exposes tools to the model, see **Gateway MCP Server and mod
 .
 ├─ 12306-mcp/
 ├─ FlightTicketMCP/
+├─ HotelTicketMCP/
 ├─ .opencode/
 │  ├─ opencode.json
 │  └─ skills/
@@ -33,9 +34,25 @@ For how the gateway exposes tools to the model, see **Gateway MCP Server and mod
 │  ├─ utils/
 │  └─ domains/
 │     ├─ train/
+│     │  ├─ registry.ts
+│     │  └─ 12306/
+│     │     └─ provider.ts
 │     ├─ flight/
+│     │  ├─ registry.ts
+│     │  └─ flight_ticket_mcp_server/
+│     │     └─ provider.ts
+│     ├─ hotel/
+│     │  ├─ registry.ts
+│     │  └─ ctrip/
+│     │     └─ provider.ts
 │     ├─ map/
+│     │  ├─ registry.ts
+│     │  └─ amap/
+│     │     └─ provider.ts
 │     └─ taxi/
+│        ├─ registry.ts
+│        └─ didi/
+│           └─ provider.ts
 ├─ .env.example
 ├─ package.json
 └─ tsconfig.json
@@ -47,8 +64,8 @@ Conventions:
 - `docs/mcp-client-examples/` hosts MCP JSON placeholders for Cursor, Claude Code, and OpenCode (see its `README.md`)
 - `.opencode/opencode.json` is the project-level OpenCode MCP configuration example
 - `.opencode/skills/error-processing/` stores the project-level error-processing skill and MCP troubleshooting reference index
-- Top-level domains are fixed: `train`, `flight`, `map`, `taxi`
-- Each child folder is one downstream MCP provider (e.g. `train/12306`)
+- Top-level domains are fixed: `train`, `flight`, `hotel`, `map`, `taxi`
+- Each child folder is one downstream MCP provider (e.g. `train/12306`, `hotel/ctrip`)
 - Each domain has a `registry.ts` that lists its providers
 
 ## Retained tools
@@ -83,6 +100,15 @@ Query tools from `FlightTicketMCP`:
 
 Hidden: `getTransferFlightsByThreePlace` — unstable scraping chain; the gateway excludes it. Direct flights only.
 
+### `hotel/ctrip`
+
+Query tools from `HotelTicketMCP`:
+
+- `hotel_ctrip_searchHotels`
+- `hotel_ctrip_login`
+
+Hotel search scrapes the login-gated Ctrip hotel list through a visible browser. Requires `HOTEL_MCP_CONSENT=yes` (ban-risk consent) and a Ctrip login state (`hotel_ctrip_login`); searches are rate-limited by a random 30s–5min interval. See the README "Hotel search risk notice".
+
 ### `map/amap`
 
 Official Amap MCP map/location capabilities without extra filtering. Exact tool names follow the current official release. Capabilities include geocoding, POI search, routing, weather, distance, and trip-map features.
@@ -104,6 +130,7 @@ Order-related tools are not integrated, for example: `taxi_create_order`, `taxi_
 
 - Train → `src/domains/train/`
 - Flight → `src/domains/flight/`
+- Hotel → `src/domains/hotel/`
 - Map → `src/domains/map/`
 - Taxi → `src/domains/taxi/`
 

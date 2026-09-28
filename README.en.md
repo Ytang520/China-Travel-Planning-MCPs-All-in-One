@@ -2,7 +2,7 @@
 
 **Languages:** [中文](README.md)
 
-English README for **[出行 MCP 统一网关](README.md)** — a single **stdio MCP entrypoint** for travel workflows in China. One connection aggregates **train** (12306), **flight** (FlightTicketMCP), **map** (official Amap MCP), and **ride-hailing fare estimates** (DiDi). Domains are fixed as `train`, `flight`, `map`, and `taxi` so providers stay easy to extend.
+English README for **[出行 MCP 统一网关](README.md)** — a single **stdio MCP entrypoint** for travel workflows in China. One connection aggregates **train** (12306), **flight** (FlightTicketMCP), **hotel** (HotelTicketMCP), **map** (official Amap MCP), and **ride-hailing fare estimates** (DiDi). Domains are fixed as `train`, `flight`, `hotel`, `map`, and `taxi` so providers stay easy to extend.
 
 ## Architecture overview
 
@@ -40,6 +40,14 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
+Install hotel provider dependencies:
+
+```bash
+cd HotelTicketMCP
+uv venv
+uv pip install -r requirements.txt
+```
+
 Or with pip: `pip install -r requirements.txt` or `pip install -e .`
 
 Create `.env` from the template, fill in your keys, then:
@@ -65,10 +73,17 @@ node build/index.js
 | `FLIGHT_MCP_BROWSER` | Browser engine for flight scraping: A=`edge` (default) / B=`chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `FLIGHT_MCP_BROWSER`) |
 | `FLIGHT_MCP_HEADLESS` | Optional: `1` enables headless mode (not recommended—Ctrip whaleguard blocks it) |
+| `HOTEL_MCP_PROJECT_ROOT` | Optional path to `HotelTicketMCP` root |
+| `HOTEL_MCP_PYTHON_COMMAND` | Python executable for HotelTicketMCP (default: `python`; with uv point it at `.venv/Scripts/python.exe`) |
+| `HOTEL_MCP_BROWSER` | Browser engine for hotel scraping: `edge` (default) / `chrome` (same as flight) |
+| `HOTEL_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `HOTEL_MCP_BROWSER`) |
+| `HOTEL_MCP_CONSENT` | ⚠ Risk-consent switch for hotel search: tools only work with `yes` (see "Hotel search risk notice") |
+| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | Optional random interval between hotel searches, in seconds (default 30~300) |
+| `HOTEL_MCP_COOKIE_FILE` | Optional cookie file location (default `HotelTicketMCP/ctrip-hotel-cookies.json`, gitignored) |
 
 Additional flight-related variables are documented in `FlightTicketMCP/.env.example`.
 
-> **Windows path note**: subprocesses run with `FLIGHT_MCP_PROJECT_ROOT` as cwd, so relative paths resolve against the child cwd. Use absolute paths for `FLIGHT_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, and `FLIGHT_MCP_BROWSER_PATH`.
+> **Windows path note**: subprocesses run with `FLIGHT_MCP_PROJECT_ROOT` / `HOTEL_MCP_PROJECT_ROOT` as cwd, so relative paths resolve against the child cwd. Use absolute paths for `FLIGHT_MCP_PYTHON_COMMAND`, `HOTEL_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, `FLIGHT_MCP_BROWSER_PATH`, and `HOTEL_MCP_BROWSER_PATH`.
 
 ### Browser requirements
 
@@ -76,12 +91,27 @@ Ctrip (flights.ctrip.com) uses a whaleguard anti-bot WAF that blocks headless br
 
 - Choose the engine at install time: **A = Edge (default) / B = Chrome**, configured via `FLIGHT_MCP_BROWSER`;
 - Searches open a **minimized window** by default (visible in the taskbar), never stealing foreground focus;
-- Headless mode (`FLIGHT_MCP_HEADLESS=1`) is off by default and is blocked by Ctrip when enabled.
+- Headless mode (`FLIGHT_MCP_HEADLESS=1`) is off by default and is blocked by Ctrip when enabled;
+- Flight scraping always uses a **fresh temporary profile** and clears cookies, so flight search is always logged out.
+
+**Hotel search (hotels.ctrip.com) also requires Chrome or Edge** (engine via `HOTEL_MCP_BROWSER`, same default as flight) and **requires a Ctrip login** (guests are redirected to the login page):
+
+- Login state is established by the `hotel_ctrip_login` tool (opens a visible window for manual login) and saved to a gitignored cookie file for reuse;
+- On search, the server injects the cookie file when not logged in; if that still fails it returns `LOGIN_REQUIRED` and stops until the user logs in.
+
+### Hotel search risk notice (important)
+
+Hotel search drives a real browser that mimics human browsing and scrapes login-gated Ctrip hotel data. **This carries a risk of account bans**:
+
+- Hotel tools are only enabled after explicit consent at install time (`HOTEL_MCP_CONSENT=yes`); **enabling means you accept the risk voluntarily, and the author takes no responsibility**;
+- To reduce risk, searches wait a random 30 s – 5 min interval between calls (tunable via `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY`) and scroll with randomized steps and pauses;
+- Flight search is unaffected by hotel login state (independent fresh profile) and does not gain this rate limit.
 
 ### Direct and transfer routes
 
 - Train: **direct** and **interline/transfer** are supported (`train_12306_get_interline_tickets`, with the 12306 interline path fixed after the upstream site rework);
-- Flight: **direct only** — `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace` relies on an unstable scraping chain and is hidden from the gateway.
+- Flight: **direct only** — `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace` relies on an unstable scraping chain and is hidden from the gateway;
+- Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, guest counts, price/star/score/room-type filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`); `hotel_ctrip_login` establishes the login state. See "Hotel search risk notice" above.
 
 ## MCP client configuration
 
@@ -99,8 +129,11 @@ Minimal **`mcpServers`** snippet compatible with **Cursor** when the MCP subproc
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
         "FLIGHT_MCP_PYTHON_COMMAND": "python",
+        "HOTEL_MCP_PYTHON_COMMAND": "python",
+        "HOTEL_MCP_CONSENT": "yes",
         "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
-        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
+        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP",
+        "HOTEL_MCP_PROJECT_ROOT": "./HotelTicketMCP"
       }
     }
   }
@@ -133,6 +166,10 @@ For geocoding, POI search, routing, weather, and other non–fare-estimate map t
 ### Flight search
 
 Flight routes default to **`auto`** (equivalent to `default`): scraping **Ctrip** listings through a **minimized visible browser** (taskbar-visible; see "Browser requirements" above). Queries take 3–8 minutes and support direct flights only.
+
+### Hotel search
+
+Hotel search uses `hotel_ctrip_searchHotels` to scrape Ctrip hotel listings: a Ctrip login is required (see "Hotel search risk notice"), the browser opens minimized by default, and scroll collection uses randomized steps and pauses; searches wait a random 30 s – 5 min interval between calls. A query takes roughly 1–2 minutes (excluding the rate-limit wait).
 
 ### Gateway MCP Server and model context
 

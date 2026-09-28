@@ -16,6 +16,7 @@
 .
 ├─ 12306-mcp/
 ├─ FlightTicketMCP/
+├─ HotelTicketMCP/
 ├─ .opencode/
 │  ├─ opencode.json
 │  └─ skills/
@@ -40,6 +41,10 @@
 │     │  ├─ registry.ts
 │     │  └─ flight_ticket_mcp_server/
 │     │     └─ provider.ts
+│     ├─ hotel/
+│     │  ├─ registry.ts
+│     │  └─ ctrip/
+│     │     └─ provider.ts
 │     ├─ map/
 │     │  ├─ registry.ts
 │     │  └─ amap/
@@ -59,8 +64,8 @@
 - `docs/mcp-client-examples/` 存放 Cursor / Claude Code / OpenCode 的 MCP 配置占位示例（见其中 `README.md`）
 - `.opencode/opencode.json` 是 OpenCode 的项目级 MCP 配置示例
 - `.opencode/skills/error-processing/` 存放项目级错误处理 skill 及 MCP 排障参考索引
-- 一级目录按业务域固定为：`train`、`flight`、`map`、`taxi`
-- 二级目录按具体子 MCP 划分，例如 `train/12306`、`map/amap`
+- 一级目录按业务域固定为：`train`、`flight`、`hotel`、`map`、`taxi`
+- 二级目录按具体子 MCP 划分，例如 `train/12306`、`hotel/ctrip`
 - 每个业务域的 `registry.ts` 汇总该域下所有 provider
 
 ## 当前保留的工具
@@ -95,6 +100,15 @@
 
 覆盖航班搜索、天气与实时航班状态等。已隐藏 `getTransferFlightsByThreePlace`：抓取链路不稳定，网关予以排除（仅直达）。
 
+### `hotel/ctrip`
+
+来自 `HotelTicketMCP` 的查询类工具：
+
+- `hotel_ctrip_searchHotels`
+- `hotel_ctrip_login`
+
+酒店搜索通过可见浏览器抓取需要登录态的携程酒店列表。需 `HOTEL_MCP_CONSENT=yes`（封禁风险同意开关）与携程登录态（`hotel_ctrip_login` 建立）；两次搜索之间自动等待随机 30s~5min。详见主文档「酒店搜索风险告知」。
+
 ### `map/amap`
 
 与官方高德 MCP 对齐的地图与位置能力，默认不做二次裁剪。能力范围包括（具体 tool 名以官方当前版本为准）：
@@ -122,6 +136,7 @@
 
 - 火车 → `src/domains/train/`
 - 航班 → `src/domains/flight/`
+- 酒店 → `src/domains/hotel/`
 - 地图 → `src/domains/map/`
 - 打车 → `src/domains/taxi/`
 
@@ -219,6 +234,7 @@ transport: {
 - 不要提交 `.env`、日志或本机绝对路径
 - 不要把个人笔记、地址、通勤数据、运行缓存纳入公开仓库
 - 本仓库不开放滴滴订单创建相关工具，仅保留费用预估
+- 酒店登录 cookie（`HotelTicketMCP/ctrip-hotel-cookies.json`）与浏览器 profile（`HotelTicketMCP/.browser-profile/`）已被 `.gitignore` 忽略，**严禁取消忽略或提交**
 - 文档和 skill 只保存公开参考链接，不保存真实密钥或私人配置
 
 ## 参考与致谢

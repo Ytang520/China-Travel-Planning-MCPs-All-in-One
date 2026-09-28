@@ -29,6 +29,7 @@
 4. **`AMAP_MAPS_API_KEY`（高德地图 MCP）**：若用户暂无密钥，引导其在 **[高德 MCP Server 概述](https://lbs.amap.com/api/mcp-server/summary)** 按官方流程申请与配置。可让其参考讲解视频：[哔哩哔哩 · 高德 MCP（BV1qwZqYJEUG）](https://www.bilibili.com/video/BV1qwZqYJEUG/)。
 5. **`DIDI_MCP_KEY`（滴滴出行 MCP）**：若用户暂无密钥，引导其在 **[滴滴 MCP 开放平台](https://mcp.didichuxing.com/)** 申请。可让其参考讲解视频：[哔哩哔哩 · 滴滴出行 MCP（BV1vpb7zaECv）](https://www.bilibili.com/video/BV1vpb7zaECv/)。
 6. **浏览器内核（航班抓取）**：携程反爬 WAF 需要可见浏览器，安装时让用户在 **A = Edge（默认）/ B = Chrome** 中选择，或提供自定义浏览器路径（见 §4.1 的 C 项）。
+7. **酒店搜索风险同意（重要）**：酒店搜索需要携程登录态并模拟真人浏览，存在账号封禁风险。必须让用户明确选择是否启用（见 §4.1 的 D 项）；**选择启用即表示用户自愿承担风险，作者概不负责**。
 
 ## 1. 检查运行环境
 
@@ -78,6 +79,25 @@ cd ..
 ```bash
 cd FlightTicketMCP
 pip install -e .
+cd ..
+```
+
+## 3.6 安装酒店子项目依赖
+
+与航班子项目一致：**优先使用 uv**，仅在用户明确要求时使用 pip。
+
+```bash
+cd HotelTicketMCP
+uv venv
+uv pip install -r requirements.txt
+cd ..
+```
+
+如果没有 `uv`，使用 `pip`：
+
+```bash
+cd HotelTicketMCP
+pip install -r requirements.txt
 cd ..
 ```
 
@@ -137,15 +157,25 @@ question: "你有滴滴出行 MCP 的 API Key 吗？（⚠ 不要粘贴在聊天
     - 等用户拿到 Key 后继续
 ```
 
-**C. 浏览器内核选择（航班抓取，A/B）**
+**C. 浏览器内核选择（航班+酒店抓取共用，A/B）**
 
 ```
-question: "选择航班抓取使用的浏览器内核？（携程反爬需要可见浏览器）"
+question: "选择航班/酒店抓取使用的浏览器内核？（携程反爬需要可见浏览器；航班与酒店共用该选择）"
 选项:
-  - "A. Edge（默认，Windows 自带即可）" → 写入 FLIGHT_MCP_BROWSER=edge
-  - "B. Chrome" → 写入 FLIGHT_MCP_BROWSER=chrome
-  - "自定义路径" → 写入 FLIGHT_MCP_BROWSER_PATH=<浏览器绝对路径>
+  - "A. Edge（默认，Windows 自带即可）" → 写入 FLIGHT_MCP_BROWSER=edge 与 HOTEL_MCP_BROWSER=edge
+  - "B. Chrome" → 写入 FLIGHT_MCP_BROWSER=chrome 与 HOTEL_MCP_BROWSER=chrome
+  - "自定义路径" → 写入 FLIGHT_MCP_BROWSER_PATH 与 HOTEL_MCP_BROWSER_PATH=<浏览器绝对路径>
 说明: 查询时会以最小化窗口打开浏览器（任务栏可见，不抢前台）；无头模式会被携程拦截，默认不启用。
+```
+
+**D. 酒店搜索风险同意（重要，必须询问）**
+
+```
+question: "是否启用携程酒店搜索（hotel 域）？⚠ 该功能通过浏览器模拟真人浏览并抓取需要登录的携程酒店数据，存在账号被封禁的风险。选择启用即表示你已了解并自愿承担该风险，作者概不负责。"
+选项:
+  - "启用，我自愿承担风险" → 写入 HOTEL_MCP_CONSENT=yes
+  - "不启用" → 不写入 HOTEL_MCP_CONSENT（或写入 no），酒店工具调用时返回 CONSENT_REQUIRED 错误
+说明: 两次酒店搜索之间会自动等待随机 30s~5min 以降低风险；酒店需要登录态，搜索返回 LOGIN_REQUIRED 时应调用 hotel_ctrip_login 让用户登录。
 ```
 
 ### 4.2 生成 .env 文件
@@ -176,15 +206,25 @@ DIDI_MCP_KEY=用户提供的滴滴Key
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
 FLIGHT_MCP_PYTHON_COMMAND=python
-# 浏览器内核：A=edge（默认）/ B=chrome
+# 浏览器内核：A=edge（默认）/ B=chrome（航班与酒店共用）
 FLIGHT_MCP_BROWSER=edge
-# 自定义浏览器路径（可选，优先于 FLIGHT_MCP_BROWSER）
+HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP
+HOTEL_MCP_PYTHON_COMMAND=python
+HOTEL_MCP_BROWSER=edge
+# 自定义浏览器路径（可选，优先于 FLIGHT_MCP_BROWSER / HOTEL_MCP_BROWSER）
 # FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# HOTEL_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
 # 无头模式（不推荐：会被携程 whaleguard 拦截）
 # FLIGHT_MCP_HEADLESS=1
+# HOTEL_MCP_HEADLESS=1
+# ⚠ 酒店搜索风险同意（D 项选择"启用"时写入 yes；不启用则整个 hotel 域不可用）
+HOTEL_MCP_CONSENT=yes
+# 两次酒店搜索之间的随机间隔范围（秒，默认 30~300）
+# HOTEL_MCP_MIN_DELAY=30
+# HOTEL_MCP_MAX_DELAY=300
 ```
 
-> **Windows 路径注意**：网关注入的环境变量中，相对路径会按**子进程的工作目录**解析（例如 `FLIGHT_MCP_PYTHON_COMMAND` 相对路径会拼接到 `FLIGHT_MCP_PROJECT_ROOT` 下）。为确保任何启动方式都可用，请为 `FLIGHT_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH` 使用**绝对路径**（示例：`C:/Users/xxx/.../FlightTicketMCP/.venv/Scripts/python.exe`）。
+> **Windows 路径注意**：网关注入的环境变量中，相对路径会按**子进程的工作目录**解析（例如 `FLIGHT_MCP_PYTHON_COMMAND` 相对路径会拼接到 `FLIGHT_MCP_PROJECT_ROOT` 下）。为确保任何启动方式都可用，请为 `FLIGHT_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH`、`HOTEL_MCP_BROWSER_PATH` 使用**绝对路径**（示例：`C:/Users/xxx/.../HotelTicketMCP/.venv/Scripts/python.exe`）。
 
 > **安全警告**：**永远不要在回复中打印真实密钥**；不要提交 `.env` 到 git；写文件后立刻验证 `.env` 是否在 `.gitignore` 中。
 
@@ -205,6 +245,7 @@ node build/index.js
 期望的启动日志至少应包含：
 - `12306 MCP Server running on stdio`
 - `Flight Ticket MCP Server 启动中`
+- `Hotel Ticket MCP Server starting...`（§4.1 D 项选择启用后应出现）
 - `[gateway] travel MCP gateway running on stdio`
 
 ## 6. MCP 客户端配置
@@ -250,14 +291,16 @@ node build/index.js
 
 1. 检查 `.env` 和客户端配置中的变量名是否一致。
 2. 检查 `npm run build` 是否成功。
-3. 检查 `FlightTicketMCP` 依赖是否已安装。
+3. 检查 `FlightTicketMCP`、`HotelTicketMCP` 依赖是否已安装。
 4. 高德、滴滴的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
 5. 航班查询失败时优先调用 `gateway_get_config` 查看 provider 连接状态与浏览器策略（引擎、无头标志、浏览器路径覆盖）；浏览器相关错误常见原因：未安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 选错内核、`FLIGHT_MCP_HEADLESS=1` 被携程拦截。
-6. 不要输出完整环境变量、token、真实密钥或私人账号数据。
+6. 酒店查询返回 `CONSENT_REQUIRED`：用户未同意风险条款（`.env` 中 `HOTEL_MCP_CONSENT` 不是 `yes`），按 §4.1 D 项重新询问用户。
+7. 酒店查询返回 `LOGIN_REQUIRED`：登录态缺失且 cookie 注入失败。调用 `hotel_ctrip_login`（会打开可见浏览器窗口），让用户手动登录（扫码或账密，最多 5 分钟），成功后 cookie 自动保存并供后续搜索复用。
+8. 不要输出完整环境变量、token、真实密钥或私人账号数据。
 
 ## 8. 部署后功能测试
 
-配置完成后，验证该网关的四个域（train / flight / map / taxi）均可用。**不要手写测试脚本。** 使用仓库内的 `scripts/mcp-test.mjs`（Windows、macOS、Linux 命令相同）。在仓库根目录执行：
+配置完成后，验证该网关的五个域（train / flight / hotel / map / taxi）均可用。**不要手写测试脚本。** 使用仓库内的 `scripts/mcp-test.mjs`（Windows、macOS、Linux 命令相同）。在仓库根目录执行：
 
 ```bash
 npm run check
@@ -269,11 +312,12 @@ npm run check
 node scripts/mcp-test.mjs config
 node scripts/mcp-test.mjs train
 node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs hotel
 node scripts/mcp-test.mjs map
 node scripts/mcp-test.mjs taxi
 ```
 
-`flight` 会打开可见浏览器，通常需要数分钟。脚本读取根目录 `.env`，不会打印密钥；密钥值替换为 `[redacted]`，用户目录和仓库绝对路径替换为 `<home>`、`<repo>`。`config` 对应 `gateway_get_config`：密钥只显示 set/unset，路径只保留仓库内相对路径。不要把脚本输出提交到 git。以下为逐域手工对照。
+`flight` 与 `hotel` 会打开可见浏览器，通常需要数分钟。脚本读取根目录 `.env`，不会打印密钥；密钥值替换为 `[redacted]`，用户目录和仓库绝对路径替换为 `<home>`、`<repo>`。`config` 对应 `gateway_get_config`：密钥只显示 set/unset，路径只保留仓库内相对路径。不要把脚本输出提交到 git。以下为逐域手工对照。
 
 > 工具名说明：网关返回的工具名为 `{domain}_{provider}_{tool}` 形式（如 `train_12306_get_tickets`）；宿主界面可能显示额外前缀（Claude Code 中为 `mcp__travel-mcp-gateway__`）。以 `gateway_list_retained_tools` 返回的 `gatewayName` 为准。
 
@@ -300,7 +344,16 @@ node scripts/mcp-test.mjs taxi
 
 预期：返回航班列表（需 1–8 分钟；期间会短暂出现一个**最小化浏览器窗口**（任务栏可见），不抢前台）。若失败，检查：本机是否安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 内核选择、`FLIGHT_MCP_HEADLESS` 是否为 1（会被携程拦截）、`FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。注意：网关**不提供**航班中转工具。
 
-### 8.4 测试地图工具（map 域）
+### 8.4 测试酒店查询（hotel 域）
+
+查询未来日期的武汉酒店（首次搜索无间隔等待；若已登录则直接返回）：
+
+- 工具：`hotel_ctrip_searchHotels`
+- 参数：`city` = "武汉"，`checkin`/`checkout` = 今天+7/+9 天，`limit` = 5
+
+预期：返回酒店列表（含 `status: success`、`count` 与 `hotels[]`；需约 1–2 分钟，期间出现最小化浏览器窗口）。若返回 `CONSENT_REQUIRED`：检查 `.env` 的 `HOTEL_MCP_CONSENT=yes` 与用户同意流程；若返回 `LOGIN_REQUIRED`：调用 `hotel_ctrip_login` 让用户手动登录后重试（登录态会保存复用）。注意：酒店搜索间有随机 30s~5min 间隔，连续两次测试第二次会等待。
+
+### 8.5 测试地图工具（map 域）
 
 调用 `map_amap_maps_geo` 将 "北京南站" 解析为经纬度坐标：
 
@@ -308,7 +361,7 @@ node scripts/mcp-test.mjs taxi
 
 预期：返回经纬度坐标。若失败，检查 `AMAP_MAPS_API_KEY` 是否有效。
 
-### 8.5 测试网约车（taxi 域）
+### 8.6 测试网约车（taxi 域）
 
 按顺序调用：
 
@@ -317,7 +370,7 @@ node scripts/mcp-test.mjs taxi
 
 预期：返回多车型预估价格（仅估价，不会下单）。
 
-### 8.6 测试结果汇总
+### 8.7 测试结果汇总
 
 向用户报告测试结果，格式如下：
 
@@ -326,6 +379,7 @@ node scripts/mcp-test.mjs taxi
 |-------|----------------------------|------|-------------------|
 | train | get_tickets (上海→北京)      | ✅/❌ | 返回 N 趟车次       |
 | flight| searchFlightRoutes (上海→北京)| ✅/❌ | 返回 N 个航班       |
+| hotel | searchHotels (武汉)         | ✅/❌ | 返回 N 家酒店       |
 | map   | maps_geo (北京南站)          | ✅/❌ | 坐标: lng, lat     |
 | taxi  | maps_textsearch (北京南站)   | ✅/❌ | 返回 N 个地点       |
 ```

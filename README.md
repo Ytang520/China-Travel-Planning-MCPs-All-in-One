@@ -2,7 +2,7 @@
 
 **语言:** [English](README.en.md)
 
-面向出行场景的单一 MCP 入口：在一条 stdio 连接上聚合 **火车**（12306）、**航班**（FlightTicketMCP）、**地图**（官方高德 MCP）与 **打车费用预估**（滴滴）。业务域固定为 `train`、`flight`、`map`、`taxi`，便于继续扩展。
+面向出行场景的单一 MCP 入口：在一条 stdio 连接上聚合 **火车**（12306）、**航班**（FlightTicketMCP）、**酒店**（HotelTicketMCP）、**地图**（官方高德 MCP）与 **打车费用预估**（滴滴）。业务域固定为 `train`、`flight`、`hotel`、`map`、`taxi`，便于继续扩展。
 
 ## 架构概览
 
@@ -10,7 +10,7 @@
 
 ## 功能概要
 
-- **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低agent 负担。
+- **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、酒店（HotelTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低agent 负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
 - **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴等场景的公开文档做语义索引, 辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
 - **免读源码**：网关内置 `gateway_get_config`（脱敏运行态配置）、`gateway_health_check`（按域轻量探测）、`gateway_list_retained_tools`（含工具参数摘要），代理无需读源码即可了解能力与参数。
@@ -40,6 +40,14 @@ uv venv
 uv pip install -r requirements.txt
 ```
 
+安装酒店子项目依赖：
+
+```bash
+cd HotelTicketMCP
+uv venv
+uv pip install -r requirements.txt
+```
+
 或使用 `pip install -r requirements.txt` / `pip install -e .`。
 
 从模板生成 `.env`，填写密钥，然后：
@@ -65,10 +73,17 @@ node build/index.js
 | `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：`edge`（默认）/ `chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `FLIGHT_MCP_BROWSER`） |
 | `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程拦截） |
+| `HOTEL_MCP_PROJECT_ROOT` | 可选，`HotelTicketMCP` 根目录 |
+| `HOTEL_MCP_PYTHON_COMMAND` | 运行 HotelTicketMCP 的 Python（默认 `python`；使用 uv 环境时指向 `.venv/Scripts/python.exe`） |
+| `HOTEL_MCP_BROWSER` | 酒店抓取浏览器内核：`edge`（默认）/ `chrome`（与航班一致） |
+| `HOTEL_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `HOTEL_MCP_BROWSER`） |
+| `HOTEL_MCP_CONSENT` | ⚠ 酒店搜索风险同意开关：`yes` 才启用酒店工具（见下文「酒店搜索风险告知」） |
+| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | 可选，两次酒店搜索之间的随机间隔范围（秒，默认 30~300） |
+| `HOTEL_MCP_COOKIE_FILE` | 可选，酒店登录 cookie 文件位置（默认 `HotelTicketMCP/ctrip-hotel-cookies.json`，已 gitignore） |
 
 航班相关补充变量见 `FlightTicketMCP/.env.example`。
 
-> **Windows 路径注意**：子进程以 `FLIGHT_MCP_PROJECT_ROOT` 为工作目录，相对路径会按子进程 cwd 解析；请为 `FLIGHT_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH` 使用绝对路径。
+> **Windows 路径注意**：子进程以 `FLIGHT_MCP_PROJECT_ROOT` / `HOTEL_MCP_PROJECT_ROOT` 为工作目录，相对路径会按子进程 cwd 解析；请为 `FLIGHT_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH`、`HOTEL_MCP_BROWSER_PATH` 使用绝对路径。
 
 ### 浏览器依赖
 
@@ -76,12 +91,27 @@ node build/index.js
 
 - 安装本 MCP 时选择内核 **A = Edge（默认）/ B = Chrome**，通过 `FLIGHT_MCP_BROWSER` 配置；
 - 查询时默认以**最小化窗口**打开（任务栏可见，不抢占前台焦点）；
-- 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后会被携程拦截，航班查询将失败。
+- 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后会被携程拦截，航班查询将失败；
+- 航班抓取使用**每次全新的临时 profile** 并清空 cookie，保证航班查询永远处于未登录状态。
+
+**酒店查询（hotels.ctrip.com）同样需要本机安装 Chrome 或 Edge**（内核选择 `HOTEL_MCP_BROWSER`，默认与航班一致），且**需要携程登录态**（游客会被重定向到登录页）：
+
+- 登录态由登录工具 `hotel_ctrip_login`（打开可见窗口手动登录）建立并保存到 gitignored 的 cookie 文件，后续搜索自动复用；
+- 搜索未登录时注入 cookie 文件，仍失败则返回 `LOGIN_REQUIRED` 并停止，等待用户登录后再继续会话。
+
+### 酒店搜索风险告知（重要）
+
+酒店搜索通过浏览器模拟真人浏览并抓取需要登录态的携程酒店数据，**存在账号被封禁的风险**：
+
+- 安装时必须显式同意风险条款（`HOTEL_MCP_CONSENT=yes`）才会启用酒店工具；**选择启用即表示自愿承担该风险，作者概不负责**；
+- 为降低风险，两次酒店搜索之间自动等待随机 30 秒 ~ 5 分钟（可用 `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 调整），滚动采集采用随机步幅与停顿的人性化行为；
+- 航班搜索不受酒店登录态影响（独立临时 profile），也不会加入该限速。
 
 ### 直达与中转说明
 
 - 火车（train）：支持**直达**与**中转/联程**（`train_12306_get_interline_tickets`，12306 中转接口路径已随上游改版修复）；
-- 航班（flight）：**仅支持直达**，`flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`（航班中转）抓取链路不稳定，网关已隐藏该工具。
+- 航班（flight）：**仅支持直达**，`flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`（航班中转）抓取链路不稳定，网关已隐藏该工具；
+- 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`hotel_ctrip_login` 用于建立登录态。详见上文「酒店搜索风险告知」。
 
 ## MCP 客户端配置示例
 
@@ -99,8 +129,11 @@ node build/index.js
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
         "FLIGHT_MCP_PYTHON_COMMAND": "python",
+        "HOTEL_MCP_PYTHON_COMMAND": "python",
+        "HOTEL_MCP_CONSENT": "yes",
         "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
-        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
+        "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP",
+        "HOTEL_MCP_PROJECT_ROOT": "./HotelTicketMCP"
       }
     }
   }
@@ -127,6 +160,10 @@ node build/index.js
 ### 航班查询
 
 航班查询（默认 `auto`，等价于 `default`）：抓取携程网页航班列表，通过**最小化可见浏览器**（任务栏可见）执行（详见上文「浏览器依赖」）。查询耗时 3–8 分钟，仅支持直达航班。
+
+### 酒店查询
+
+酒店查询通过 `hotel_ctrip_searchHotels` 抓取携程酒店列表：需要登录态（详见上文「酒店搜索风险告知」），默认以最小化窗口打开浏览器，滚动采集采用随机步幅与停顿；两次搜索之间自动等待随机 30s~5min。查询耗时约 1–2 分钟（不含限速等待）。
 
 ### Gateway MCP Server 与模型上下文的关系
 
