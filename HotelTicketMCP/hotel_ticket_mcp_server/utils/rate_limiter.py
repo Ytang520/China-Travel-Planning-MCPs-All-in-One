@@ -4,10 +4,13 @@
 因此每次搜索前等待一个随机间隔（默认 30s~5min，可用环境变量调整）。
 """
 
+import logging
 import os
 import random
 import threading
 import time
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MIN_DELAY = 30.0
 DEFAULT_MAX_DELAY = 300.0
@@ -47,8 +50,15 @@ class SearchRateLimiter:
         if from_env:
             # 环境变量来源的配置做钳制（配置笔误不应让子进程在 import 时崩溃），
             # 显式构造参数仍严格校验（依赖该行为的测试与调用方）
+            original = (self.min_delay, self.max_delay)
             self.min_delay = max(0.0, self.min_delay)
             self.max_delay = max(self.max_delay, self.min_delay)
+            if (self.min_delay, self.max_delay) != original:
+                logger.warning(
+                    "延迟配置已钳制: (%s, %s) -> (%.0f, %.0f)，"
+                    "请检查 HOTEL_MCP_MIN_DELAY/HOTEL_MCP_MAX_DELAY（默认 30~300）",
+                    original[0], original[1], self.min_delay, self.max_delay,
+                )
         elif self.min_delay < 0 or self.max_delay < self.min_delay:
             raise ValueError(
                 f"invalid delay range: [{self.min_delay}, {self.max_delay}]"

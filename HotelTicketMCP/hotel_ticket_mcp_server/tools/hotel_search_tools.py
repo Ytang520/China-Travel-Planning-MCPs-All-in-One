@@ -209,7 +209,7 @@ def _resolve_city_via_ui(page, city):
                         int(province.group(1)) if province else 0,
                         int(country.group(1)) if country else 1,
                     )
-                    cities_dict.CITY_IDS[city] = ids
+                    cities_dict.CITY_IDS[city.strip()] = ids
                     logger.info("UI 回退解析出 %s → %s", city, ids)
                     return ids
         return None
