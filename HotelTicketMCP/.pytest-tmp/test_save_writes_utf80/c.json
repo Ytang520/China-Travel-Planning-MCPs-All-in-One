@@ -1,0 +1,20 @@
+{
+  "cookies": [
+    {
+      "name": "cticket",
+      "value": "AAA",
+      "domain": ".ctrip.com",
+      "httpOnly": true
+    },
+    {
+      "name": "login_uid",
+      "value": "BBB",
+      "domain": ".ctrip.com"
+    },
+    {
+      "name": "DUID",
+      "value": "CCC"
+    }
+  ],
+  "saved_at": "2026-09-29T01:07:42.301576"
+}
