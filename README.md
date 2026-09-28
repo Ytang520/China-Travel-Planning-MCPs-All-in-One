@@ -10,9 +10,9 @@
 
 ## 功能概要
 
-- **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低多进程与多配置心智负担。
+- **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低agent 负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
-- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴等场景的公开文档做语义索引；在不泄露密钥的前提下，辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
+- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴等场景的公开文档做语义索引, 辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
 - **免读源码**：网关内置 `gateway_get_config`（脱敏运行态配置）、`gateway_health_check`（按域轻量探测）、`gateway_list_retained_tools`（含工具参数摘要），代理无需读源码即可了解能力与参数。
 
 ## 让 Agent 安装
@@ -62,9 +62,9 @@ node build/index.js
 | `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（默认 `python`；使用 uv 环境时指向 `.venv/Scripts/python.exe`） |
 | `TRAIN_12306_ENTRY` | 可选，12306 MCP 入口脚本路径 |
 | `FLIGHT_MCP_PROJECT_ROOT` | 可选，`FlightTicketMCP` 根目录 |
-| `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：A=`edge`（默认）/ B=`chrome` |
+| `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：`edge`（默认）/ `chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `FLIGHT_MCP_BROWSER`） |
-| `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程 whaleguard 拦截） |
+| `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程拦截） |
 
 航班相关补充变量见 `FlightTicketMCP/.env.example`。
 
@@ -72,9 +72,9 @@ node build/index.js
 
 ### 浏览器依赖
 
-携程（flights.ctrip.com）的反爬 WAF（whaleguard）会拦截无头浏览器（HTTP 432）与无浏览器 HTTP 请求，因此**航班查询需要本机安装 Chrome 或 Edge**：
+携程（flights.ctrip.com）的反爬 WAF（whaleguard）会拦截无头浏览器（HTTP 432）与无浏览器 HTTP 请求，因此**航班查询需要本机提前安装 Chrome 或 Edge**：
 
-- 安装时选择内核 **A = Edge（默认）/ B = Chrome**，通过 `FLIGHT_MCP_BROWSER` 配置；
+- 安装本 MCP 时选择内核 **A = Edge（默认）/ B = Chrome**，通过 `FLIGHT_MCP_BROWSER` 配置；
 - 查询时默认以**最小化窗口**打开（任务栏可见，不抢占前台焦点）；
 - 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后会被携程拦截，航班查询将失败。
 
@@ -120,7 +120,7 @@ node build/index.js
 1. `taxi_didi_maps_textsearch`
 2. `taxi_didi_taxi_estimate`
 
-`estimate` 使用的经纬度须来自滴滴 `maps_textsearch`（密钥与接口说明见 [滴滴 MCP](https://mcp.didichuxing.com/)）。不使用高德 MCP 返回的坐标。
+`estimate` 使用的经纬度须来自滴滴 `maps_textsearch`（密钥与接口说明见 [滴滴 MCP](https://mcp.didichuxing.com/)）。注意，此处不使用高德 MCP 返回的坐标。
 
 对于地理编码、POI、路径、天气等非打车预估场景优先使用 `map/amap`。参考：[高德 MCP Server 概述](https://lbs.amap.com/api/mcp-server/summary)。
 
@@ -132,11 +132,7 @@ node build/index.js
 
 网关进程启动时会遍历各业务域的 provider，调用 `connectAndRegisterProvider`，把已成功连接且按规则保留的下游工具，统一注册到同一个 MCP Server（见 `src/index.ts`）
 
-若某个下游连接失败，该 provider 的工具不会出现在清单里（启动日志会有 `[gateway] failed to connect provider`）。
-
 ## 更新记录
-
-本次及历史变更写在 [CHANGELOG.md](CHANGELOG.md)。推送 `vX.Y.Z` 标签后，会自动生成对应的 [GitHub Release](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/releases)。
 
 ## 致谢
 
