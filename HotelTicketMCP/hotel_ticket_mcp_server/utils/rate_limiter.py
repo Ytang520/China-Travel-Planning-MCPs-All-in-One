@@ -33,6 +33,7 @@ class SearchRateLimiter:
         sleep=time.sleep,
         rng=None,
     ):
+        from_env = min_delay is None or max_delay is None
         self.min_delay = float(
             min_delay
             if min_delay is not None
@@ -43,7 +44,12 @@ class SearchRateLimiter:
             if max_delay is not None
             else _env_float("HOTEL_MCP_MAX_DELAY", DEFAULT_MAX_DELAY)
         )
-        if self.min_delay < 0 or self.max_delay < self.min_delay:
+        if from_env:
+            # 环境变量来源的配置做钳制（配置笔误不应让子进程在 import 时崩溃），
+            # 显式构造参数仍严格校验（依赖该行为的测试与调用方）
+            self.min_delay = max(0.0, self.min_delay)
+            self.max_delay = max(self.max_delay, self.min_delay)
+        elif self.min_delay < 0 or self.max_delay < self.min_delay:
             raise ValueError(
                 f"invalid delay range: [{self.min_delay}, {self.max_delay}]"
             )

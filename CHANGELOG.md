@@ -17,7 +17,7 @@
 - 防封机制：两次酒店搜索间随机 30s~5min 间隔（`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；人性化滚动（随机步幅 ≥0.45 视口、随机停顿、偶发回滚与鼠标移动；双指标连续 3 轮零增长判底）；浏览器单飞锁 + 按 profile 路径精确清理自身残留进程。
 - 风险同意开关 `HOTEL_MCP_CONSENT`：未同意时酒店工具返回 `CONSENT_REQUIRED`；安装流程新增交互询问（封禁风险明示，自愿承担，作者概不负责）。
 - 网关：`gateway_health_check` 支持 hotel（connectivity-only）；`gateway_get_config` 新增 hotelBrowser 段；`scripts/mcp-test.mjs` 新增 `hotel` 模式。
-- HotelTicketMCP 单元测试 26 项（限速/cookie 存储/城市字典/URL 构造/登录判定/卡片解析；pytest basetemp 固定在项目内，规避系统 TEMP 权限问题）。
+- HotelTicketMCP 单元测试 33 项（限速/cookie 存储/城市字典/URL 构造/登录判定/卡片解析/参数校验；pytest basetemp 固定在项目内，规避系统 TEMP 权限问题）。
 
 ### Changed
 
@@ -26,7 +26,7 @@
 
 ### Security
 
-- `.gitignore` 新增：`HotelTicketMCP/.venv/`、`.browser-profile/`、`ctrip-hotel-cookies.json`、`logs/`、`.pytest-tmp/`、根目录 `ctrip-cookies.json`、`edge_hotels.json`——酒店登录 cookie 与浏览器 profile 永不入库。
+- `.gitignore` 新增：`HotelTicketMCP/.venv/`、`.browser-profile/`、`ctrip-hotel-cookies.json`、`logs/`、`.pytest-tmp/`、`.pytest_cache/`、根目录 `ctrip-cookies.json`、`edge_hotels.json`——酒店登录 cookie 与浏览器 profile 永不入库。
 
 ## [0.2.0] - 2026-09-28
 

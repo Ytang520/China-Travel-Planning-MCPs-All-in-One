@@ -169,7 +169,7 @@ def register_tools():
         return hotel_login_tools.ctripHotelLogin()
 
     logging.getLogger(__name__).info(
-        "MCP工具注册完成 - 已注册工具: searchHotels, ctripHotelLogin"
+        "MCP工具注册完成 - 已注册工具: searchHotels, login"
     )
 
 

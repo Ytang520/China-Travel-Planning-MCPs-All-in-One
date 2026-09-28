@@ -189,7 +189,7 @@ def _resolve_city_via_ui(page, city):
         box.input(city)
         time.sleep(1)
         btn = page.ele("text:搜索", timeout=5)
-        if btn is None:
+        if not btn:
             return None
         btn.click()
         deadline = time.time() + 15
@@ -438,9 +438,11 @@ def searchHotels(
         if login_err:
             return login_err
 
-        # 登录判定通过但列表容器缺失 → 可能被反爬拦截或页面结构变化
+        # 登录判定通过但列表容器缺失 → 可能被反爬拦截或页面结构变化。
+        # 注意：DrissionPage 找不到元素时返回 falsy 的 NoneElement（不是 None），
+        # 必须用真值判断而非 `is not None`。
         try:
-            has_list = page.ele("css:.hotel-list", timeout=10) is not None
+            has_list = bool(page.ele("css:.hotel-list", timeout=10))
         except Exception:  # pragma: no cover - ele 超时抛错视为未渲染
             has_list = False
         if not has_list:
