@@ -32,48 +32,46 @@ LOGIN_ERROR = {
     "data_source": "ctrip_web_scraping",
 }
 
-# 与验证版一致的卡片快照 JS（div.hotel-list 直接子元素）
+# 与验证版一致的卡片快照 JS（div.hotel-list 直接子元素）。
+# 注意：DrissionPage run_js 会把代码包进函数执行，必须用顶层 return 语句风格，
+# 不能写成箭头函数表达式（箭头函数只会被求值而不会被执行）。
 SNAPSHOT_JS = """
-() => {
-  const list = document.querySelector('.hotel-list');
-  if (!list) return [];
-  return [...list.children]
-    .filter(el => (el.innerText || '').includes('查看详情'))
-    .map(el => {
-      const text = el.innerText;
-      const lines = text.split('\\n').map(s => s.trim()).filter(Boolean);
-      const prices = (text.match(/¥[\\d,]+/g) || []).map(p => parseInt(p.replace(/[¥,]/g, ''), 10));
-      const ariaStar = [...el.querySelectorAll('[aria-label]')]
-        .map(n => n.getAttribute('aria-label'))
-        .find(a => /out of 5/.test(a || '')) || '';
-      const distance = (lines.find(l => l.startsWith('距')) || '').replace('查看地图', '').trim();
-      const reviews = (lines.find(l => l.includes('条点评')) || '').replace(/^(超棒|很好|不错|一般|差)/, '');
-      let room = lines.find(l => /房|床/.test(l) && !l.startsWith('距') && !l.startsWith('热卖') && l.length < 60) || '';
-      if (!/房|床/.test(room)) room = '';
-      return {
-        name: lines[0] || '',
-        stars: (ariaStar || '').split(' ')[0] || '',
-        score: lines.find(l => /^\\d\\.\\d$/.test(l)) || '',
-        reviews: reviews,
-        distance: distance,
-        room: room,
-        price: prices.length ? prices[prices.length - 1] : null,
-      };
-    });
-}
+const list = document.querySelector('.hotel-list');
+if (!list) return [];
+return [...list.children]
+  .filter(el => (el.innerText || '').includes('查看详情'))
+  .map(el => {
+    const text = el.innerText;
+    const lines = text.split('\\n').map(s => s.trim()).filter(Boolean);
+    const prices = (text.match(/¥[\\d,]+/g) || []).map(p => parseInt(p.replace(/[¥,]/g, ''), 10));
+    const ariaStar = [...el.querySelectorAll('[aria-label]')]
+      .map(n => n.getAttribute('aria-label'))
+      .find(a => /out of 5/.test(a || '')) || '';
+    const distance = (lines.find(l => l.startsWith('距')) || '').replace('查看地图', '').trim();
+    const reviews = (lines.find(l => l.includes('条点评')) || '').replace(/^(超棒|很好|不错|一般|差)/, '');
+    let room = lines.find(l => /房|床/.test(l) && !l.startsWith('距') && !l.startsWith('热卖') && l.length < 60) || '';
+    if (!/房|床/.test(room)) room = '';
+    return {
+      name: lines[0] || '',
+      stars: (ariaStar || '').split(' ')[0] || '',
+      score: lines.find(l => /^\\d\\.\\d$/.test(l)) || '',
+      reviews: reviews,
+      distance: distance,
+      room: room,
+      price: prices.length ? prices[prices.length - 1] : null,
+    };
+  });
 """
 
 METRICS_JS = """
-() => {
-  const doc = document.documentElement || {};
-  const body = document.body || {};
-  return {
-    scroll_top: window.pageYOffset || doc.scrollTop || body.scrollTop || 0,
-    viewport_height: window.innerHeight || doc.clientHeight || 0,
-    scroll_height: Math.max(body.scrollHeight || 0, doc.scrollHeight || 0),
-    card_count: document.querySelectorAll('.hotel-list > *').length,
-  };
-}
+const doc = document.documentElement || {};
+const body = document.body || {};
+return {
+  scroll_top: window.pageYOffset || doc.scrollTop || body.scrollTop || 0,
+  viewport_height: window.innerHeight || doc.clientHeight || 0,
+  scroll_height: Math.max(body.scrollHeight || 0, doc.scrollHeight || 0),
+  card_count: document.querySelectorAll('.hotel-list > *').length,
+};
 """
 
 
@@ -141,8 +139,8 @@ def _header_text(page):
         return ""
 
 
-def _ensure_logged_in(page):
-    """三层登录态：已登录→None；未登录→注入 cookie 再试；仍失败→LOGIN_ERROR。"""
+def _ensure_logged_in(page, target_url):
+    """三层登录态：已登录→None；未登录→注入 cookie 再导航；仍失败→LOGIN_ERROR。"""
     header = _header_text(page)
     if login_state.detect_login_state(page.url or "", header) == "logged_in":
         return None
@@ -153,18 +151,22 @@ def _ensure_logged_in(page):
         return LOGIN_ERROR
     try:
         page.set.cookies(cookie_store.to_injectable(cookies))
+        logger.info("已注入 %s 条 cookie，重新导航到目标页", len(cookies))
     except Exception as e:  # pragma: no cover - 注入异常按失败处理
         logger.warning("cookie 注入失败: %s", e)
         return LOGIN_ERROR
+    # 注入后必须完整导航回目标页：停留在 passport 登录页上刷新不会自动跳转
     try:
-        page.refresh()
-    except Exception:  # pragma: no cover
-        pass
+        page.get(target_url, timeout=90)
+    except Exception as e:  # pragma: no cover
+        logger.warning("注入后重新导航失败: %s", e)
+        return LOGIN_ERROR
     time.sleep(4)
     header = _header_text(page)
     if login_state.detect_login_state(page.url or "", header) == "logged_in":
         logger.info("cookie 注入后登录态恢复")
         return None
+    logger.warning("cookie 注入后仍未恢复登录态")
     return LOGIN_ERROR
 
 
@@ -338,7 +340,10 @@ def _format_output(hotels, city, checkin, checkout, location):
         price = f"¥{h['price']}起" if h.get("price") else "价格未知"
         lines.append(f"【{i}】{h['name']}{stars}{score}")
         if h.get("reviews"):
-            lines.append(f"    💬 {h['reviews']} · {h.get('distance', '')}")
+            detail = h["reviews"]
+            if h.get("distance"):
+                detail += f" · {h['distance']}"
+            lines.append(f"    💬 {detail}")
         if h.get("room"):
             lines.append(f"    🛏 {h['room']}")
         lines.append(f"    💰 {price}")
@@ -429,7 +434,7 @@ def searchHotels(
             return _error("SCRAPING_FAILED", f"页面打开失败: {e}")
         time.sleep(5)
 
-        login_err = _ensure_logged_in(page)
+        login_err = _ensure_logged_in(page, built["url"])
         if login_err:
             return login_err
 

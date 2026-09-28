@@ -13,6 +13,7 @@ import os
 import socket
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -76,10 +77,14 @@ def free_port():
 
 
 def cleanup_stale_profile_processes(profile_dir):
-    """按 profile 路径过滤 CommandLine，终止本工具遗留的浏览器进程（不碰用户浏览器）。"""
+    """按 profile 路径过滤 CommandLine，终止本工具遗留的浏览器进程（不碰用户浏览器）。
+
+    注意：PowerShell -like 通配符中 `\\` 匹配两个字面反斜杠，因此路径中的
+    单反斜杠必须原样保留，只对单引号做转义。
+    """
     if os.name != "nt":
         return 0
-    needle = str(profile_dir).replace("\\", "\\\\").replace("'", "''")
+    needle = str(profile_dir).replace("'", "''")
     killed = 0
     for exe in ("msedge.exe", "chrome.exe"):
         ps_cmd = (
@@ -145,6 +150,7 @@ class BrowserSingleton:
             killed = cleanup_stale_profile_processes(self.profile_dir)
             if killed:
                 logger.info("清理了 %s 个残留浏览器进程", killed)
+                time.sleep(1)  # 等待 profile 锁释放
             co = create_options(browser_path, self.profile_dir, headless)
             try:
                 self._page = ChromiumPage(co)
