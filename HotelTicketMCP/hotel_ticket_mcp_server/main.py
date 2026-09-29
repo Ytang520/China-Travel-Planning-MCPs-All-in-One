@@ -162,7 +162,8 @@ def register_tools():
     @mcp.tool(name="login")
     def ctripHotelLogin():
         """携程酒店登录助手 - 打开可见浏览器窗口，等待用户手动完成携程登录，
-        然后把登录 cookie 保存到本地文件供后续搜索复用（最多等待 5 分钟）。
+        然后把登录 cookie 保存到本地文件供后续搜索复用（默认最多等待 14 分钟，
+        可用 HOTEL_MCP_LOGIN_TIMEOUT 调整；登录窗口保持打开直至登录完成或超时）。
 
         ⚠ 仅在搜索返回 LOGIN_REQUIRED 错误时调用；使用本工具即表示同意风险条款。
         """

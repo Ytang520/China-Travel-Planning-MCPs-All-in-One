@@ -1,7 +1,7 @@
 // Cross-platform post-install smoke test for the travel MCP gateway.
 // Windows, macOS, and Linux:
 //   npm run check
-//   node scripts/mcp-test.mjs [health|config|train|flight|map|taxi]
+//   node scripts/mcp-test.mjs [health|config|train|flight|hotel|login|map|taxi]
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
-const MODES = ["health", "config", "train", "flight", "hotel", "map", "taxi"];
+const MODES = ["health", "config", "train", "flight", "hotel", "login", "map", "taxi"];
 const NAMED_SECRETS = new Set(["AMAP_MAPS_API_KEY", "DIDI_MCP_KEY"]);
 
 const unquote = (value) => {
@@ -306,9 +306,48 @@ try {
         checkout,
         limit: 5,
       },
-      960000,
+      990000,
     );
     printText(text, 4000);
+  }
+
+  if (mode === "login") {
+    printText(
+      "携程登录流程：即将打开可见浏览器窗口，请在其中手动完成登录（窗口保持打开直至登录完成或超时，期间不要关闭窗口）。",
+      120,
+    );
+    const { text } = await callTool("hotel_ctrip_login", {}, 990000);
+    printText(text, 4000);
+
+    let loggedIn = false;
+    try {
+      loggedIn = JSON.parse(text)?.status === "success";
+    } catch {
+      loggedIn = false;
+    }
+    if (!loggedIn) {
+      printText("登录未成功，请重新运行 login 模式。", 60);
+      failed = true;
+    } else {
+      // 登录成功后自动复跑酒店搜索，验证 cookie 已保存复用
+      const checkin = addDays(localDate(), 7);
+      const checkout = addDays(localDate(), 9);
+      printText(
+        `登录成功，复跑酒店搜索验证：checkin: ${checkin} / checkout: ${checkout}`,
+        120,
+      );
+      const { text: hotelText } = await callTool(
+        "hotel_ctrip_searchHotels",
+        {
+          city: "武汉",
+          checkin,
+          checkout,
+          limit: 5,
+        },
+        990000,
+      );
+      printText(hotelText, 4000);
+    }
   }
 
   if (mode === "map") {

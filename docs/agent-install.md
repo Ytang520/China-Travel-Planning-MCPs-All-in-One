@@ -297,7 +297,7 @@ For MCP connection, authentication, schema, or response-format issues:
 4. For Amap and DiDi key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
 5. For flight failures, call `gateway_get_config` first to inspect provider connectivity and browser strategy (engine, headless flag, path override). Common browser-related causes: no Chrome/Edge installed, wrong `FLIGHT_MCP_BROWSER` engine, or `FLIGHT_MCP_HEADLESS=1` being blocked by Ctrip.
 6. Hotel search returning `CONSENT_REQUIRED`: the user has not consented to the risk terms (`.env` `HOTEL_MCP_CONSENT` is not `yes`); re-ask per §4.1 D.
-7. Hotel search returning `LOGIN_REQUIRED`: no login state and cookie injection failed. Call `hotel_ctrip_login` (opens a visible browser window), have the user log in manually (QR or password, up to 5 minutes); cookies are saved automatically for later searches.
+7. Hotel search returning `LOGIN_REQUIRED`: no login state and cookie injection failed. **Stop the current test and notify the user to log in**: run `node scripts/mcp-test.mjs login` (calls `hotel_ctrip_login`, which opens a visible browser window), and have the user log in manually (QR or password; waits up to 14 minutes by default, adjustable via `HOTEL_MCP_LOGIN_TIMEOUT`). **The login window stays open until login completes or times out — do not close the window or kill the process hosting it during this period**, or the user cannot finish logging in. Cookies are saved automatically on success, and the `login` mode re-runs a hotel search to verify; after that no further login is needed (searches inject the saved cookies).
 8. Never print full environment dumps, tokens, real secrets, or private account data.
 
 ## 8. Post-deployment smoke test
@@ -315,6 +315,7 @@ node scripts/mcp-test.mjs config
 node scripts/mcp-test.mjs train
 node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
+node scripts/mcp-test.mjs login
 node scripts/mcp-test.mjs map
 node scripts/mcp-test.mjs taxi
 ```
@@ -353,7 +354,7 @@ Query future dates for Wuhan hotels (first search has no interval wait):
 - Tool: `hotel_ctrip_searchHotels`
 - Params: `city` = "武汉", `checkin`/`checkout` = today +7/+9 days, `limit` = 5
 
-Expected: A hotel list (`status: success`, `count`, `hotels[]`; takes ~1–2 minutes with a minimized browser window). If it returns `CONSENT_REQUIRED`, check `HOTEL_MCP_CONSENT=yes` in `.env` and the §4.1 D consent flow; if `LOGIN_REQUIRED`, call `hotel_ctrip_login` and have the user log in (login state is saved for reuse). Note: hotel searches are separated by a random 30s–5min interval, so a second consecutive test will wait.
+Expected: A hotel list (`status: success`, `count`, `hotels[]`; takes ~1–2 minutes with a minimized browser window). If it returns `CONSENT_REQUIRED`, check `HOTEL_MCP_CONSENT=yes` in `.env` and the §4.1 D consent flow; if `LOGIN_REQUIRED`, **stop the test and notify the user to log in** — run `node scripts/mcp-test.mjs login`, which opens a visible browser window and waits for the user (up to 14 minutes by default); **do not close the window or interrupt the process** during this period. On success the mode automatically re-runs a hotel search to verify (login state is saved for reuse). Note: hotel searches are separated by a random 30s–5min interval, so a second consecutive test will wait.
 
 ### 8.5 Test map geocoding (map domain)
 

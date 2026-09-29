@@ -5,6 +5,7 @@
 """
 
 import logging
+import os
 import time
 
 from ..utils import consent, cookie_store, login_state
@@ -12,8 +13,22 @@ from ..utils.browser_factory import SEARCH_LOCK, browser_session
 
 logger = logging.getLogger(__name__)
 
-LOGIN_TIMEOUT_SECONDS = 300
 POLL_INTERVAL_SECONDS = 3
+
+
+def _env_int(name, default):
+    """读取整数环境变量：空值/非法值静默回退默认值（避免子进程因配置笔误而崩溃）。"""
+    try:
+        raw = (os.environ.get(name) or "").strip()
+        if not raw:
+            return default
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return default
+
+
+# 默认 14 分钟：需小于网关 hotel provider 的 requestTimeout（900s），留出浏览器启动/导航余量
+LOGIN_TIMEOUT_SECONDS = _env_int("HOTEL_MCP_LOGIN_TIMEOUT", 840)
 
 
 def _error(code, message):
@@ -94,7 +109,8 @@ def ctripHotelLogin():
         if state != "logged_in":
             return _error(
                 "LOGIN_TIMEOUT",
-                f"登录超时（{LOGIN_TIMEOUT_SECONDS // 60} 分钟）或用户未完成登录，请重试。",
+                f"登录超时（{LOGIN_TIMEOUT_SECONDS // 60} 分钟，可用 HOTEL_MCP_LOGIN_TIMEOUT 调整）。"
+                "登录窗口即将关闭，请重新调用本工具重试。",
             )
 
         cookies = _extract_cookies(page)

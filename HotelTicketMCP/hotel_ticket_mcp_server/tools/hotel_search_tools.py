@@ -24,9 +24,9 @@ _RATE_LIMITER = SearchRateLimiter()
 LOGIN_ERROR = {
     "status": "error",
     "message": (
-        "携程登录态缺失且 cookie 注入失败。请停止当前会话并通知用户："
-        "调用 hotel_ctrip_login 工具完成携程登录（会打开浏览器窗口等待手动登录），"
-        "登录完成后即可继续搜索。"
+        "携程登录态缺失且 cookie 注入失败。请立即通知用户：调用 hotel_ctrip_login 工具完成携程登录"
+        "（会打开可见浏览器窗口等待手动登录）。登录窗口会保持打开直至登录完成或超时，"
+        "期间请勿关闭窗口或中断网关进程；登录完成后即可继续搜索。"
     ),
     "error_code": "LOGIN_REQUIRED",
     "data_source": "ctrip_web_scraping",

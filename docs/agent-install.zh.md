@@ -297,7 +297,7 @@ node build/index.js
 4. 高德、滴滴的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
 5. 航班查询失败时优先调用 `gateway_get_config` 查看 provider 连接状态与浏览器策略（引擎、无头标志、浏览器路径覆盖）；浏览器相关错误常见原因：未安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 选错内核、`FLIGHT_MCP_HEADLESS=1` 被携程拦截。
 6. 酒店查询返回 `CONSENT_REQUIRED`：用户未同意风险条款（`.env` 中 `HOTEL_MCP_CONSENT` 不是 `yes`），按 §4.1 D 项重新询问用户。
-7. 酒店查询返回 `LOGIN_REQUIRED`：登录态缺失且 cookie 注入失败。调用 `hotel_ctrip_login`（会打开可见浏览器窗口），让用户手动登录（扫码或账密，最多 5 分钟），成功后 cookie 自动保存并供后续搜索复用。
+7. 酒店查询返回 `LOGIN_REQUIRED`：登录态缺失且 cookie 注入失败。**停止当前测试并立即通知用户完成登录**：运行 `node scripts/mcp-test.mjs login`（调用 `hotel_ctrip_login`，会打开可见浏览器窗口），让用户手动登录（扫码或账密，默认最多等待 14 分钟，可用 `HOTEL_MCP_LOGIN_TIMEOUT` 调整）。**登录窗口会保持打开直至登录完成或超时——期间不要关闭窗口、不要中断或杀掉承载登录窗口的进程**，否则用户无法完成登录。登录成功后 cookie 自动保存，`login` 模式会复跑一次酒店搜索验证；验证通过后无需再次登录（后续搜索自动注入复用）。
 8. 不要输出完整环境变量、token、真实密钥或私人账号数据。
 
 ## 8. 部署后功能测试
@@ -315,6 +315,7 @@ node scripts/mcp-test.mjs config
 node scripts/mcp-test.mjs train
 node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
+node scripts/mcp-test.mjs login
 node scripts/mcp-test.mjs map
 node scripts/mcp-test.mjs taxi
 ```
@@ -353,7 +354,7 @@ node scripts/mcp-test.mjs taxi
 - 工具：`hotel_ctrip_searchHotels`
 - 参数：`city` = "武汉"，`checkin`/`checkout` = 今天+7/+9 天，`limit` = 5
 
-预期：返回酒店列表（含 `status: success`、`count` 与 `hotels[]`；需约 1–2 分钟，期间出现最小化浏览器窗口）。若返回 `CONSENT_REQUIRED`：检查 `.env` 的 `HOTEL_MCP_CONSENT=yes` 与用户同意流程；若返回 `LOGIN_REQUIRED`：调用 `hotel_ctrip_login` 让用户手动登录后重试（登录态会保存复用）。注意：酒店搜索间有随机 30s~5min 间隔，连续两次测试第二次会等待。
+预期：返回酒店列表（含 `status: success`、`count` 与 `hotels[]`；需约 1–2 分钟，期间出现最小化浏览器窗口）。若返回 `CONSENT_REQUIRED`：检查 `.env` 的 `HOTEL_MCP_CONSENT=yes` 与用户同意流程；若返回 `LOGIN_REQUIRED`：**停止测试并通知用户登录**——运行 `node scripts/mcp-test.mjs login`，会打开可见浏览器窗口等待用户手动登录（默认最多 14 分钟），期间**不要关闭窗口或中断进程**；登录成功后该模式会自动复跑一次酒店搜索验证（登录态会保存复用）。注意：酒店搜索间有随机 30s~5min 间隔，连续两次测试第二次会等待。
 
 ### 8.5 测试地图工具（map 域）
 
