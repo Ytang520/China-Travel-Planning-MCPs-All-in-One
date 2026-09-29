@@ -127,16 +127,18 @@ cd ..
 
 ## 4. Collect API keys and create environment files
 
-> **MUST collect keys interactively**: Do **not** pause and wait for the user to fill in keys themselves—use the `question` tool to collect each key, and only guide to application links when a key is missing. Then write the collected values to `.env`.
+> **MUST collect keys interactively**: Do **not** pause and wait for the user to fill in keys themselves—use the `question` tool to collect each key, and only guide to application links when a key is missing. Then write the collected values to `.env`. Do not proceed to §8 functional testing until both keys are collected (otherwise the map/taxi domains FAIL because the keys are empty).
 
 ### 4.1 Interactive key collection
 
 Use the `question` tool in this order:
 
+> **`question` tool constraints**: One call can contain at most 4 questions; **every question needs at least 2 options** (single-option questions are rejected outright—do not construct single-option questions, and do not invent filler options); **ask all questions in the user's language**. Key values are free text—have the user enter them via the question's built-in **Other** option; once received, write keys to `.env` and **never echo real keys in replies**.
+
 **A. AMAP Maps API Key**
 
 ```
-question: "Do you have an AMAP (Amap/Gaode) Maps API Key? (⚠ Do not paste it in chat)"
+question: "Do you have an AMAP (Amap/Gaode) Maps API Key? (If you have one, choose Other and paste the key; ⚠ do not paste it in chat)"
 options:
   - "I have a key, I'll enter it" → user inputs the value; write to .env as AMAP_MAPS_API_KEY
   - "I don't have a key, need to apply" → output application links:
@@ -148,7 +150,7 @@ options:
 **B. DIDI MCP Key**
 
 ```
-question: "Do you have a DiDi (Didi Chuxing) MCP Key? (⚠ Do not paste it in chat)"
+question: "Do you have a DiDi (Didi Chuxing) MCP Key? (If you have one, choose Other and paste the key; ⚠ do not paste it in chat)"
 options:
   - "I have a key, I'll enter it" → user inputs the value; write to .env as DIDI_MCP_KEY
   - "I don't have a key, need to apply" → output application links:
