@@ -1,11 +1,13 @@
-"""浏览器单例工厂：路径解析、空闲端口、残留清理、ChromiumOptions 构造。
+"""浏览器工厂：路径解析、空闲端口、残留清理、ChromiumOptions 构造（按次使用，用完即关）。
 
 设计要点（均经 2026-09-29 实测验证）：
 - 未设 user_data_path 时 DrissionPage 会用 PortFinder 管理的临时 profile；
-  酒店需要自己的持久 profile（登录态复用），因此显式 set_local_port + set_user_data_path
+  酒店需要自己的持久 profile（保持浏览器指纹稳定），因此显式 set_local_port + set_user_data_path
   （set_user_data_path 单独使用会因 address 为空而崩溃）。
 - 同一 profile 目录被已存活的浏览器实例锁定时，新启动会 BrowserConnectError；
   因此启动前按 profile 路径精确清理本工具遗留的进程（绝不触碰用户自己的浏览器）。
+- 方案 A：browser_session() 上下文管理器保证每次搜索/登录结束即关闭浏览器；
+  登录态不依赖浏览器存活，由 cookie 文件注入承载。
 """
 
 import logging
@@ -14,6 +16,7 @@ import socket
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -128,7 +131,11 @@ def create_options(browser_path, profile_dir, headless=False):
 
 
 class BrowserSingleton:
-    """进程内唯一的浏览器实例：登录后同实例内搜索免注入（tier-1 登录态）。"""
+    """按次使用的浏览器实例：每次搜索/登录用完即关（方案 A）。
+
+    登录态不依赖浏览器存活——由 cookie 文件承载，跨会话注入恢复（已实测）。
+    启动前仍会清理上次异常退出遗留的残留进程。
+    """
 
     def __init__(self, profile_dir=None):
         self.profile_dir = Path(profile_dir) if profile_dir else DEFAULT_PROFILE_DIR
@@ -182,3 +189,16 @@ def get_default_singleton():
     if _default_singleton is None:
         _default_singleton = BrowserSingleton()
     return _default_singleton
+
+
+@contextmanager
+def browser_session():
+    """按次开关浏览器：with 块退出时无论成败都关闭浏览器进程。
+
+    配合 SEARCH_LOCK 使用：`with SEARCH_LOCK, browser_session() as singleton:`。
+    """
+    singleton = get_default_singleton()
+    try:
+        yield singleton
+    finally:
+        singleton.quit()

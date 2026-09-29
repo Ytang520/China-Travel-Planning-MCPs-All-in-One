@@ -8,7 +8,7 @@ import logging
 import time
 
 from ..utils import consent, cookie_store, login_state
-from ..utils.browser_factory import SEARCH_LOCK, get_default_singleton
+from ..utils.browser_factory import SEARCH_LOCK, browser_session
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,7 @@ def ctripHotelLogin():
     if not consent.is_consented():
         return consent.CONSENT_ERROR
 
-    with SEARCH_LOCK:
-        singleton = get_default_singleton()
+    with SEARCH_LOCK, browser_session() as singleton:
         try:
             page = singleton.get()
         except Exception as e:
@@ -93,10 +92,6 @@ def ctripHotelLogin():
             )
 
         if state != "logged_in":
-            try:
-                page.set.window.mini()
-            except Exception:  # pragma: no cover
-                pass
             return _error(
                 "LOGIN_TIMEOUT",
                 f"登录超时（{LOGIN_TIMEOUT_SECONDS // 60} 分钟）或用户未完成登录，请重试。",
@@ -108,11 +103,6 @@ def ctripHotelLogin():
                 "LOGIN_TIMEOUT", "登录态检测通过但未提取到 cookie，请重试。"
             )
         path = cookie_store.save_cookies(cookies)
-
-        try:
-            page.set.window.mini()
-        except Exception:  # pragma: no cover
-            pass
 
         logger.info("登录成功，已保存 %s 条 cookie 到 %s", len(cookies), path)
         return {

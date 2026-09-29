@@ -1,5 +1,7 @@
 # Ctrip 酒店搜索 MCP 实施计划（HotelTicketMCP + hotel 域）
 
+> **后续修订（2026-09-29，方案 A）**：本文为实施时的历史记录。登录态流程最终按**两层**实现（注入 cookie 文件 → 失败则 LOGIN_REQUIRED 重登），浏览器**按次开关**（每次搜索/登录用完即关，`browser_session()` 上下文管理器），不再使用"三层流程 / 长驻浏览器单例"方案——详见 spec §4 的修订。文中其余内容仍与实现一致。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > 本会话执行方式：主代理内联实施 + 完成后派发子代理复查（用户指定，最多 3 轮修复）。
 

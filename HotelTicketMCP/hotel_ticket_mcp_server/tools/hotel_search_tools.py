@@ -1,9 +1,10 @@
-"""酒店搜索工具：consent gate、限速、浏览器、三层登录态、人性化滚动采集、解析。
+"""酒店搜索工具：consent gate、限速、按次开关浏览器、登录态、人性化滚动采集、解析。
 
-登录态三层流程（用户定义）：
-1. 先不注入：浏览器单例的持久 profile 中短期登录过则直接命中；
-2. 未登录则注入 cookie 文件（ctrip-hotel-cookies.json，gitignored）再检测；
-3. 仍失败返回 LOGIN_REQUIRED，由 Agent 通知用户调用 hotel_ctrip_login。
+登录态流程（方案 A：每次搜索用完即关闭浏览器）：
+1. 注入 cookie 文件（ctrip-hotel-cookies.json，gitignored，含 HttpOnly）→ 重新导航检测；
+2. 仍失败 → 返回 LOGIN_REQUIRED，由 Agent 通知用户调用 hotel_ctrip_login 重新登录。
+登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），
+不依赖具体会员身份文本。
 """
 
 import logging
@@ -14,7 +15,7 @@ from datetime import datetime
 
 from ..utils import cities_dict, cookie_store, login_state, url_builder
 from ..utils import consent
-from ..utils.browser_factory import SEARCH_LOCK, get_default_singleton
+from ..utils.browser_factory import SEARCH_LOCK, browser_session
 from ..utils.rate_limiter import SearchRateLimiter
 
 logger = logging.getLogger(__name__)
@@ -140,11 +141,11 @@ def _header_text(page):
 
 
 def _ensure_logged_in(page, target_url):
-    """三层登录态：已登录→None；未登录→注入 cookie 再导航；仍失败→LOGIN_ERROR。"""
-    header = _header_text(page)
-    if login_state.detect_login_state(page.url or "", header) == "logged_in":
-        return None
-    logger.info("未登录标记命中，尝试从 cookie 文件注入")
+    """登录态流程：注入 cookie 文件 → 重新导航检测；失败则返回 LOGIN_ERROR。
+
+    （浏览器按次开关，每次都是全新会话，登录态完全由 cookie 文件承载——
+    已实测：cookie 文件跨浏览器重启注入后登录态恢复。）
+    """
     cookies = cookie_store.load_cookies()
     if not cookies:
         logger.warning("cookie 文件不存在或为空")
@@ -383,8 +384,7 @@ def searchHotels(
             "限速等待 %.1fs（随机间隔 %.1fs）", rate_info["waited_seconds"], rate_info["delay_seconds"]
         )
 
-    with SEARCH_LOCK:
-        singleton = get_default_singleton()
+    with SEARCH_LOCK, browser_session() as singleton:
         try:
             page = singleton.get()
         except Exception as e:

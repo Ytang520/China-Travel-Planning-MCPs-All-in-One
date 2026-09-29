@@ -14,11 +14,12 @@
 - `searchHotels`（网关注册名 `hotel_ctrip_searchHotels`）：携程酒店搜索——城市/地标、入住退房日期、人数、价格/星级/评分/房型/住宿类型筛选与排序（smart/price_asc/distance/score_desc）。
 - `login`（网关注册名 `hotel_ctrip_login`）：携程登录助手——打开可见浏览器窗口，等待用户手动登录后把 cookie 保存到 gitignored 文件供后续搜索复用。
 
-## 登录态三层流程
+## 登录态流程（按次开关浏览器）
 
-1. 浏览器单例的持久 profile（近期登录过则同实例内免注入）；
-2. 未登录 → 注入 `ctrip-hotel-cookies.json`（含 HttpOnly cookie）再导航；
-3. 仍失败 → 返回 `LOGIN_REQUIRED`，由 Agent 停止并通知用户调用登录工具。
+浏览器在每次搜索/登录完成后立即关闭（无长驻进程），登录态完全由 cookie 文件承载：
+
+1. 搜索时注入 `ctrip-hotel-cookies.json`（含 HttpOnly cookie）→ 重新导航 → 检测登录态；
+2. 仍未恢复 → 返回 `LOGIN_REQUIRED`，由 Agent 停止并通知用户调用登录工具重新登录。
 
 ## 安装与测试
 

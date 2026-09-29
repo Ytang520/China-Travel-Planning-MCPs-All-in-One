@@ -96,8 +96,7 @@ Ctrip (flights.ctrip.com) uses a whaleguard anti-bot WAF that blocks headless br
 
 **Hotel search (hotels.ctrip.com) also requires Chrome or Edge** (engine via `HOTEL_MCP_BROWSER`, same default as flight) and **requires a Ctrip login** (guests are redirected to the login page):
 
-- Login state is established by the `hotel_ctrip_login` tool (opens a visible window for manual login) and saved to a gitignored cookie file for reuse;
-- On search, the server injects the cookie file when not logged in; if that still fails it returns `LOGIN_REQUIRED` and stops until the user logs in.
+- Login state is established by the `hotel_ctrip_login` tool (opens a visible window for manual login) and saved to a gitignored cookie file for reuse; **each search/login uses an independent browser session that is closed when done**, and login state is restored by cookie-file injection; if injection still fails the server returns `LOGIN_REQUIRED` and stops until the user logs in.
 
 ### Hotel search risk notice (important)
 

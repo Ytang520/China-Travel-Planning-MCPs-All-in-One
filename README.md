@@ -96,8 +96,7 @@ node build/index.js
 
 **酒店查询（hotels.ctrip.com）同样需要本机安装 Chrome 或 Edge**（内核选择 `HOTEL_MCP_BROWSER`，默认与航班一致），且**需要携程登录态**（游客会被重定向到登录页）：
 
-- 登录态由登录工具 `hotel_ctrip_login`（打开可见窗口手动登录）建立并保存到 gitignored 的 cookie 文件，后续搜索自动复用；
-- 搜索未登录时注入 cookie 文件，仍失败则返回 `LOGIN_REQUIRED` 并停止，等待用户登录后再继续会话。
+- 登录态由登录工具 `hotel_ctrip_login`（打开可见窗口手动登录）建立并保存到 gitignored 的 cookie 文件，后续搜索自动复用；**每次搜索/登录使用独立的浏览器会话（用完即关）**，登录态由 cookie 文件注入恢复；注入仍失败则返回 `LOGIN_REQUIRED` 并停止，等待用户登录后再继续会话。
 
 ### 酒店搜索风险告知（重要）
 

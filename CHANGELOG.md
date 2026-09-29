@@ -13,7 +13,7 @@
 ### Added
 
 - 新业务域 `hotel`：`HotelTicketMCP` 子项目（Python，FastMCP + DrissionPage）通过可见浏览器抓取携程酒店列表。工具：`hotel_ctrip_searchHotels`（城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选，排序 smart/price_asc/distance/score_desc，limit≤50）、`hotel_ctrip_login`（打开可见窗口手动登录并保存 cookie）。
-- 登录态三层流程：浏览器单例持久 profile（同实例免注入）→ cookie 文件注入（含 HttpOnly，`set.cookies` 原生支持）→ `LOGIN_REQUIRED` 停止并引导用户登录。登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），不依赖具体会员身份文本。
+- 登录态流程（方案 A，按次开关浏览器）：每次搜索/登录完成后立即关闭浏览器进程（无长驻）；登录态由 cookie 文件注入承载——注入 `ctrip-hotel-cookies.json`（含 HttpOnly，`set.cookies` 原生支持）→ 重新导航检测 → 失败返回 `LOGIN_REQUIRED` 并引导用户经 `hotel_ctrip_login` 重登。登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），不依赖具体会员身份文本。
 - 防封机制：两次酒店搜索间随机 30s~5min 间隔（`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；人性化滚动（随机步幅 ≥0.45 视口、随机停顿、偶发回滚与鼠标移动；双指标连续 3 轮零增长判底）；浏览器单飞锁 + 按 profile 路径精确清理自身残留进程。
 - 风险同意开关 `HOTEL_MCP_CONSENT`：未同意时酒店工具返回 `CONSENT_REQUIRED`；安装流程新增交互询问（封禁风险明示，自愿承担，作者概不负责）。
 - 网关：`gateway_health_check` 支持 hotel（connectivity-only）；`gateway_get_config` 新增 hotelBrowser 段；`scripts/mcp-test.mjs` 新增 `hotel` 模式。
