@@ -257,8 +257,8 @@ Copy-ready placeholders live under **[docs/mcp-client-examples/](mcp-client-exam
 ### 6.1 Shared rules
 
 - The gateway is a **stdio** server: `node` + `build/index.js`.
-- Keep env names aligned with `.env` / host injection: `AMAP_MAPS_API_KEY`, `DIDI_MCP_KEY`, `FLIGHT_MCP_PYTHON_COMMAND`; optional `TRAIN_12306_ENTRY`, `FLIGHT_MCP_PROJECT_ROOT` (see [.env.example](../.env.example)).
-- If the host **cwd is not the repo root**, switch `./build/index.js` (and `./12306-mcp`, `./FlightTicketMCP`) to **absolute paths**.
+- Keep env names aligned with `.env` / host injection: `AMAP_MAPS_API_KEY`, `DIDI_MCP_KEY`, `FLIGHT_MCP_PYTHON_COMMAND`; optional `TRAIN_12306_ENTRY`, `FLIGHT_MCP_PROJECT_ROOT`, `HOTEL_MCP_PYTHON_COMMAND`, `HOTEL_MCP_PROJECT_ROOT`, `HOTEL_MCP_CONSENT` (see [.env.example](../.env.example)). Note: inject `HOTEL_MCP_CONSENT=yes` **only after the user accepted the risk terms in §4.1 D**; otherwise keep `no` (hotel tools return `CONSENT_REQUIRED`).
+- If the host **cwd is not the repo root**, switch `./build/index.js` (and `./12306-mcp`, `./FlightTicketMCP`, `./HotelTicketMCP`) to **absolute paths**.
 
 ### 6.2 Cursor
 

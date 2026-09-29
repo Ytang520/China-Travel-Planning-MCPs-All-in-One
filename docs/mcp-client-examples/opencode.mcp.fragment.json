@@ -8,7 +8,10 @@
       "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
       "FLIGHT_MCP_PYTHON_COMMAND": "python",
       "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
-      "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP"
+      "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP",
+      "HOTEL_MCP_PYTHON_COMMAND": "python",
+      "HOTEL_MCP_PROJECT_ROOT": "./HotelTicketMCP",
+      "HOTEL_MCP_CONSENT": "no"
     }
   }
 }

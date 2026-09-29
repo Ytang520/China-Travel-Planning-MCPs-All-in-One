@@ -15,7 +15,7 @@
 ## 路径与工作目录
 
 - 示例中 `args` / `command` 使用 **`./build/index.js`**，假定 MCP **进程启动时的当前工作目录为仓库根**。若宿主不支持或 cwd 不是仓库根，请将条目改为 **`build/index.js` 的绝对路径**。
-- 环境变量中的 `./12306-mcp/...`、`./FlightTicketMCP` 同样相对于 **仓库根**（与网关进程 cwd 一致）。
+- 环境变量中的 `./12306-mcp/...`、`./FlightTicketMCP`、`./HotelTicketMCP` 同样相对于 **仓库根**（与网关进程 cwd 一致）。
 
 ## 官方文档链接
 
@@ -34,8 +34,13 @@ claude mcp add --transport stdio \
   --env FLIGHT_MCP_PYTHON_COMMAND=python \
   --env TRAIN_12306_ENTRY=./12306-mcp/build/index.js \
   --env FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP \
+  --env HOTEL_MCP_PYTHON_COMMAND=python \
+  --env HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP \
+  --env HOTEL_MCP_CONSENT=no \
   --scope project travel-mcp-gateway -- node ./build/index.js
 ```
+
+> **酒店风险同意**：上述示例中的 `HOTEL_MCP_CONSENT` 默认为 `no`（酒店工具返回 `CONSENT_REQUIRED`）。只有在安装流程中用户明确同意封禁风险条款后（见 [agent-install.zh.md](../agent-install.zh.md) §4.1 D），才应将其改为 `yes`——改为 `yes` 即表示用户自愿承担账号封禁风险，作者概不负责。
 
 具体标志与 `--` 分隔规则以 [Claude Code MCP 文档](https://docs.claude.com/en/docs/claude-code/mcp.md) 为准。
 

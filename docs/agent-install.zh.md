@@ -257,8 +257,8 @@ node build/index.js
 ### 6.1 通用约定
 
 - 网关为 **stdio** 进程：`node` + `build/index.js`。
-- 环境变量名应与 `.env` / 宿主侧注入保持一致：`AMAP_MAPS_API_KEY`、`DIDI_MCP_KEY`、`FLIGHT_MCP_PYTHON_COMMAND`；可选 `TRAIN_12306_ENTRY`、`FLIGHT_MCP_PROJECT_ROOT`（见 [.env.example](../.env.example)）。
-- 若宿主拉起 MCP 时 **cwd 不是仓库根**：将 `./build/index.js`（及相关 `./12306-mcp`、`./FlightTicketMCP`）改为 **绝对路径**。
+- 环境变量名应与 `.env` / 宿主侧注入保持一致：`AMAP_MAPS_API_KEY`、`DIDI_MCP_KEY`、`FLIGHT_MCP_PYTHON_COMMAND`；可选 `TRAIN_12306_ENTRY`、`FLIGHT_MCP_PROJECT_ROOT`、`HOTEL_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PROJECT_ROOT`、`HOTEL_MCP_CONSENT`（见 [.env.example](../.env.example)）。注意：**仅当用户在 §4.1 D 同意风险条款后才注入 `HOTEL_MCP_CONSENT=yes`**，否则保持 `no`（酒店工具将返回 `CONSENT_REQUIRED`）。
+- 若宿主拉起 MCP 时 **cwd 不是仓库根**：将 `./build/index.js`（及相关 `./12306-mcp`、`./FlightTicketMCP`、`./HotelTicketMCP`）改为 **绝对路径**。
 
 ### 6.2 Cursor
 
