@@ -2,8 +2,6 @@
 
 This guide is for LLM agents. The goal is to install dependencies, configure environment files, build the Travel MCP Gateway, and prepare MCP client configuration for the user.
 
-![Unified Travel MCP Gateway overview](assets/workflow.png)
-
 ## Questions for the user
 
 Ask for everything below **before** making changes. **Never paste live secrets** into chat. Do **not** commit `.env`, logs, or machine-local paths.
