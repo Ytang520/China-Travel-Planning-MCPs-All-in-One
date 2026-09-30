@@ -20,7 +20,7 @@
 把下面内容复制给你的 LLM Agent（Cursor、Claude Code、OpenCode 等），让它按指南完成依赖安装、密钥配置、构建验证和 MCP 客户端配置：
 
 ```text
-Install and configure Travel MCP Gateway by following the instructions here:
+Install and configure Travel MCP Gateway in this folder by following the instructions here:
 https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.zh.md
 ```
 
