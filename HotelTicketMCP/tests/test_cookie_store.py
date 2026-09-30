@@ -1,4 +1,5 @@
 import json
+import pytest
 
 from hotel_ticket_mcp_server.utils import cookie_store
 
@@ -24,6 +25,14 @@ def test_save_and_load_roundtrip(tmp_path):
 def test_load_corrupted_file_returns_empty(tmp_path):
     path = tmp_path / "bad.json"
     path.write_text("{not json", encoding="utf-8")
+    assert cookie_store.load_cookies(path) == []
+
+
+@pytest.mark.parametrize("raw", [b"\xff\xfe", json.dumps(SAMPLE).encode("utf-16")],
+                         ids=["invalid-utf8", "utf16"])
+def test_unreadable_cookie_encoding_returns_empty(tmp_path, raw):
+    path = tmp_path / "bad-encoding.json"
+    path.write_bytes(raw)
     assert cookie_store.load_cookies(path) == []
 
 

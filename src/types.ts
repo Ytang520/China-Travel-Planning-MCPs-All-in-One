@@ -38,6 +38,7 @@ export type DownstreamToolDefinition = {
 };
 
 export type DownstreamProviderDefinition = {
+  python?: import("./utils/pythonInterpreter.js").PythonRequirement;
   domain: DomainName;
   providerName: string;
   displayName: string;

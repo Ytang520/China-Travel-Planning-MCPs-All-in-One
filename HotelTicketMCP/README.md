@@ -19,22 +19,17 @@
 浏览器在每次搜索/登录完成后立即关闭（无长驻进程），登录态完全由 cookie 文件承载：
 
 1. 搜索时注入 `ctrip-hotel-cookies.json`（含 HttpOnly cookie）→ 重新导航 → 检测登录态；
-2. 仍未恢复 → 返回 `LOGIN_REQUIRED`，由 Agent 停止并通知用户调用登录工具重新登录。
+2. 缺少或失效的 cookie → 返回 `LOGIN_REQUIRED`，调用登录工具发起客户端原生提问；不支持 elicitation 的客户端由 Agent 使用 AskUserQuestion 或等价工具提问。用户选择打开后直接进入携程登录页，验证成功后以原参数重试一次。详见[登录交互约定](../docs/hotel-login.md)。
 
 ## 安装与测试
 
-```bash
-uv venv
-uv pip install -r requirements.txt
-uv pip install pytest   # 开发测试用
-.venv/Scripts/python.exe -m pytest tests/ -v
-```
+统一网关安装时，在仓库根目录按[运行指南](../docs/browser-runtime.md)安装两个 provider 到根 `.venv`。
 
-启动（stdio）：
+独立安装时，在本项目目录执行 `uv venv .venv --python 3.11`，随后执行 `uv pip install --python <解释器路径> -e ".[dev]"`。Windows 解释器为 `.venv/Scripts/python.exe`，macOS/Linux 为 `.venv/bin/python`。
 
-```bash
-.venv/Scripts/python.exe -m hotel_ticket_mcp_server
-```
+启动：`uv run --no-project --python <解释器路径> python -m hotel_ticket_mcp_server`。
+
+浏览器支持按平台自动发现和最终一次 DrissionPage 兜底。退出时校验进程归属，保留 profile/cookie，下一次启动恢复已确认的遗留浏览器。
 
 ## 环境变量
 

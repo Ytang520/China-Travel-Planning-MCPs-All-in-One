@@ -8,6 +8,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { searchArguments, validateSearchResult } from "./search-checks.mjs";
+import { hotelSearchWithLogin, loginAction } from "./hotel-interaction.mjs";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { createInterface } from "node:readline/promises";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -158,6 +162,10 @@ const withNodeOnPath = (env) => {
 };
 
 const mode = process.argv[2] ?? "health";
+let explicitLoginAction;
+try { explicitLoginAction = loginAction(process.argv.slice(3)); }
+catch (error) { process.stderr.write(`${error.message}\n`); process.exit(1); }
+const dateArgs = process.argv.slice(3).filter(arg => !arg.startsWith("--login-action="));
 if (!MODES.includes(mode)) {
   process.stderr.write(
     `usage: node scripts/mcp-test.mjs [${MODES.join("|")}]\n`,
@@ -166,6 +174,16 @@ if (!MODES.includes(mode)) {
 }
 
 const envPath = resolve(ROOT, ".env");
+// Validate only these two examples before starting the gateway or any browser.
+let searchRequest;
+if (mode === "flight" || mode === "hotel") {
+  try {
+    searchRequest = searchArguments(mode, dateArgs);
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(1);
+  }
+}
 if (!existsSync(envPath)) {
   process.stderr.write("missing .env in the repository root. Copy .env.example and fill it in.\n");
   process.exit(1);
@@ -225,15 +243,38 @@ transport.stderr?.on("end", () => {
   drainStderr(true);
 });
 
-const client = new Client({ name: "install-check", version: "0.0.1" });
+const canPrompt = Boolean(process.stdin.isTTY && process.stdout.isTTY) || explicitLoginAction !== undefined;
+const client = new Client({ name: "install-check", version: "0.0.1" }, {
+  capabilities: canPrompt ? { elicitation: { form: {} } } : {},
+});
+if (canPrompt) client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+  if (request.params.mode === "url") return { action: "decline" };
+  printText(request.params.message, 1000);
+  let choice = explicitLoginAction;
+  if (choice === undefined) {
+    const terminal = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await terminal.question("1. 打开登录页  2. 取消本次酒店查询 [1/2]: ", {
+        signal: AbortSignal.any([extra.signal, AbortSignal.timeout(115000)]),
+      });
+      choice = answer.trim() === "1" ? "open_login" : "cancel";
+    } catch { choice = "cancel"; }
+    finally { terminal.close(); }
+  }
+  printText(choice === "open_login" ? "用户已选择打开携程登录页。" : "用户已取消登录。", 100);
+  return choice === "open_login"
+    ? { action: "accept", content: { action: "打开登录页" } }
+    : { action: "decline" };
+});
 let failed = false;
 
-const callTool = async (name, args, timeout) => {
+const callTool = async (name, args, timeout, recordFailure = true) => {
   const result = await client.callTool({ name, arguments: args }, undefined, {
     timeout,
+    onprogress: progress => { if (progress.message) printText(progress.message, 500); },
   });
   const text = textOf(result);
-  if (result.isError || /"status"\s*:\s*"error"/.test(text)) {
+  if (recordFailure && (result.isError || /"status"\s*:\s*"error"/.test(text))) {
     failed = true;
   }
   return { result, text };
@@ -278,45 +319,26 @@ try {
     printText(text, 3000);
   }
 
-  if (mode === "flight") {
-    const date = localDate();
-    printText(`date: ${date}`, 40);
-    const { text } = await callTool(
-      "flight_flight_ticket_mcp_server_searchFlightRoutes",
-      {
-        departure_city: "上海",
-        destination_city: "北京",
-        departure_date: date,
-        data_source_preference: "default",
-      },
-      540000,
-    );
+  if (mode === "flight" || mode === "hotel") {
+    const flight = mode === "flight";
+    printText(`request: ${JSON.stringify(searchRequest)}`, 500);
+    const result = flight
+      ? (await callTool("flight_flight_ticket_mcp_server_searchFlightRoutes", searchRequest, 540000)).result
+      : await hotelSearchWithLogin(async (name, args) =>
+          (await callTool(name, args, name === "hotel_ctrip_login" ? 1110000 : 990000, false)).result,
+          searchRequest, message => printText(message, 500));
+    const text = textOf(result);
     printText(text, 4000);
-  }
-
-  if (mode === "hotel") {
-    const checkin = addDays(localDate(), 7);
-    const checkout = addDays(localDate(), 9);
-    printText(`checkin: ${checkin} / checkout: ${checkout}`, 80);
-    const { text } = await callTool(
-      "hotel_ctrip_searchHotels",
-      {
-        city: "武汉",
-        checkin,
-        checkout,
-        limit: 5,
-      },
-      990000,
-    );
-    printText(text, 4000);
+    const count = validateSearchResult(mode, result, searchRequest);
+    printText(`PASS ${mode}: browser search returned ${count} records (${process.platform})`, 150);
   }
 
   if (mode === "login") {
     printText(
-      "携程登录流程：即将打开可见浏览器窗口，请在其中手动完成登录（窗口保持打开直至登录完成或超时，期间不要关闭窗口）。",
+      "携程登录流程：请先回答登录提示；选择打开后，在浏览器中完成登录，系统会自动检测。",
       120,
     );
-    const { text } = await callTool("hotel_ctrip_login", {}, 990000);
+    const { text } = await callTool("hotel_ctrip_login", {}, 1110000);
     printText(text, 4000);
 
     let loggedIn = false;
@@ -330,23 +352,19 @@ try {
       failed = true;
     } else {
       // 登录成功后自动复跑酒店搜索，验证 cookie 已保存复用
-      const checkin = addDays(localDate(), 7);
-      const checkout = addDays(localDate(), 9);
+      const verifyRequest = searchArguments("hotel", []);
       printText(
-        `登录成功，复跑酒店搜索验证：checkin: ${checkin} / checkout: ${checkout}`,
+        `登录成功，复跑酒店搜索验证：checkin: ${verifyRequest.checkin} / checkout: ${verifyRequest.checkout}`,
         120,
       );
-      const { text: hotelText } = await callTool(
+      const { text: hotelText, result: hotelResult } = await callTool(
         "hotel_ctrip_searchHotels",
-        {
-          city: "武汉",
-          checkin,
-          checkout,
-          limit: 5,
-        },
+        verifyRequest,
         990000,
       );
       printText(hotelText, 4000);
+      const count = validateSearchResult("hotel", hotelResult, verifyRequest);
+      printText(`PASS hotel login: browser search returned ${count} records (${process.platform})`, 150);
     }
   }
 

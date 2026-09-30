@@ -2,9 +2,8 @@
 
 登录态流程（方案 A：每次搜索用完即关闭浏览器）：
 1. 注入 cookie 文件（ctrip-hotel-cookies.json，gitignored，含 HttpOnly）→ 重新导航检测；
-2. 仍失败 → 返回 LOGIN_REQUIRED，由 Agent 通知用户调用 hotel_ctrip_login 重新登录。
-登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），
-不依赖具体会员身份文本。
+2. 确认为游客 → 返回 LOGIN_REQUIRED，调用 hotel_ctrip_login 请求用户选择。
+3. 页面空白、拦截或状态不明 → 返回 LOGIN_STATE_UNKNOWN；不误报登录成功。
 """
 
 import logging
@@ -24,9 +23,9 @@ _RATE_LIMITER = SearchRateLimiter()
 LOGIN_ERROR = {
     "status": "error",
     "message": (
-        "携程登录态缺失且 cookie 注入失败。请立即通知用户：调用 hotel_ctrip_login 工具完成携程登录"
-        "（会打开可见浏览器窗口等待手动登录）。登录窗口会保持打开直至登录完成或超时，"
-        "期间请勿关闭窗口或中断网关进程；登录完成后即可继续搜索。"
+        "携程登录态缺失或已失效。请调用 hotel_ctrip_login，让用户通过原生提问选择打开登录页或取消。"
+        "若返回 USER_INTERACTION_REQUIRED，先调用 AskUserQuestion 或宿主提问工具并等待回答；"
+        "选择打开后在浏览器中完成登录，成功后以原参数重试酒店查询一次。"
     ),
     "error_code": "LOGIN_REQUIRED",
     "data_source": "ctrip_web_scraping",
@@ -49,8 +48,8 @@ return [...list.children]
       .find(a => /out of 5/.test(a || '')) || '';
     const distance = (lines.find(l => l.startsWith('距')) || '').replace('查看地图', '').trim();
     const reviews = (lines.find(l => l.includes('条点评')) || '').replace(/^(超棒|很好|不错|一般|差)/, '');
-    let room = lines.find(l => /房|床/.test(l) && !l.startsWith('距') && !l.startsWith('热卖') && l.length < 60) || '';
-    if (!/房|床/.test(room)) room = '';
+    // Reviews and hotel names can contain 房/床; only trust the room-name node.
+    const room = (el.querySelector('.room-info .room-name')?.innerText || '').trim();
     return {
       name: lines[0] || '',
       stars: (ariaStar || '').split(' ')[0] || '',
@@ -130,17 +129,8 @@ def parse_cards(raw_cards, min_score=None):
     return hotels
 
 
-def _header_text(page):
-    try:
-        return page.run_js(
-            "return (document.body ? document.body.innerText : '').slice(0, 600)"
-        )
-    except Exception:  # pragma: no cover - 页面异常时按未登录处理
-        return ""
-
-
 def _ensure_logged_in(page, target_url):
-    """登录态流程：注入 cookie 文件 → 重新导航检测；失败则返回 LOGIN_ERROR。
+    """注入 cookie 后重新导航；缺少有效凭据/确认为游客才请求登录。
 
     （浏览器按次开关，每次都是全新会话，登录态完全由 cookie 文件承载——
     已实测：cookie 文件跨浏览器重启注入后登录态恢复。）
@@ -150,24 +140,36 @@ def _ensure_logged_in(page, target_url):
         logger.warning("cookie 文件不存在或为空")
         return LOGIN_ERROR
     try:
-        page.set.cookies(cookie_store.to_injectable(cookies))
-        logger.info("已注入 %s 条 cookie，重新导航到目标页", len(cookies))
-    except Exception as e:  # pragma: no cover - 注入异常按失败处理
-        logger.warning("cookie 注入失败: %s", e)
+        injectable = cookie_store.to_injectable(cookies)
+    except (KeyError, TypeError, ValueError):
+        logger.warning("cookie 文件内容无效，需要重新登录")
         return LOGIN_ERROR
+    try:
+        page.set.cookies(injectable)
+        logger.info("已注入 %s 条 cookie，重新导航到目标页", len(cookies))
+    except Exception as e:
+        logger.warning("cookie 注入失败 (%s)", type(e).__name__)
+        return _error("LOGIN_STATE_UNKNOWN", "无法向浏览器恢复登录态，请检查浏览器连接后重试。")
     # 注入后必须完整导航回目标页：停留在 passport 登录页上刷新不会自动跳转
     try:
-        page.get(target_url, timeout=90)
-    except Exception as e:  # pragma: no cover
-        logger.warning("注入后重新导航失败: %s", e)
-        return LOGIN_ERROR
+        loaded = page.get(target_url, retry=0, timeout=90)
+    except Exception as e:
+        logger.warning("注入后重新导航失败 (%s)", type(e).__name__)
+        return _error("LOGIN_STATE_UNKNOWN", "酒店页面加载失败，无法确认登录状态，请稍后重试。")
+    if loaded is False:
+        return _error("LOGIN_STATE_UNKNOWN", "酒店页面加载失败，无法确认登录状态，请稍后重试。")
     time.sleep(4)
-    header = _header_text(page)
-    if login_state.detect_login_state(page.url or "", header) == "logged_in":
+    try:
+        state = login_state.observe(page)["state"]
+    except Exception:
+        state = "unknown"
+    if state == "logged_in":
         logger.info("cookie 注入后登录态恢复")
         return None
+    if state == "unknown":
+        return _error("LOGIN_STATE_UNKNOWN", "无法确认酒店登录状态（页面未加载或被拦截），请稍后重试。")
     logger.warning("cookie 注入后仍未恢复登录态")
-    return LOGIN_ERROR
+    return {**LOGIN_ERROR, "return_url": target_url}
 
 
 def _resolve_city_via_ui(page, city):
@@ -377,6 +379,10 @@ def searchHotels(
     if err:
         return err
 
+    # Missing credentials must prompt immediately, before throttling or launching a browser.
+    if not cookie_store.load_cookies():
+        return dict(LOGIN_ERROR)
+
     rate_info = _RATE_LIMITER.wait_if_needed()
     if rate_info["waited_seconds"] > 0:
         logger.info(
@@ -388,11 +394,7 @@ def searchHotels(
             page = singleton.get()
         except Exception as e:
             logger.error("浏览器启动失败: %s", e)
-            singleton.reset()
-            try:
-                page = singleton.get()
-            except Exception as e2:  # pragma: no cover
-                return _error("SCRAPING_FAILED", f"浏览器启动失败: {e2}")
+            return _error(getattr(e, "code", "BROWSER_LAUNCH_FAILED"), str(e))
 
         city_ids = cities_dict.get_city_ids(city)
         landmark_code = cities_dict.get_landmark(location) if location else None
@@ -428,9 +430,11 @@ def searchHotels(
             warnings.append("早餐筛选暂无已验证的筛选编码，已忽略")
 
         try:
-            page.get(built["url"], timeout=90)
+            loaded = page.get(built["url"], retry=0, timeout=90)
         except Exception as e:
             return _error("SCRAPING_FAILED", f"页面打开失败: {e}")
+        if loaded is False:
+            return _error("SCRAPING_FAILED", "酒店页面加载失败，请稍后重试。")
         time.sleep(5)
 
         login_err = _ensure_logged_in(page, built["url"])

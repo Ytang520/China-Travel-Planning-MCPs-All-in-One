@@ -10,8 +10,9 @@ import json
 import os
 import random
 import logging
-import shutil
-import socket
+from pathlib import Path
+from ..utils.browser_discovery import BrowserDiscovery
+from ..utils.browser_runtime import OwnedBrowser
 import tempfile
 import time
 import re
@@ -41,54 +42,11 @@ except ImportError:
 
 # =================== 航班路线查询功能 ===================
 
-EDGE_CANDIDATES = [
-    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-]
-CHROME_CANDIDATES = [
-    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-]
-
-
-def _free_port() -> int:
-    """Bind an ephemeral port and return it (DrissionPage set_local_port 用)。"""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _resolve_browser_path() -> Optional[str]:
-    """Resolve a Chromium-based browser for DrissionPage.
-
-    Precedence: FLIGHT_MCP_BROWSER_PATH (explicit override) >
-    FLIGHT_MCP_BROWSER engine choice (A=edge, B=chrome; default edge) >
-    probe the other engine as fallback.
-    """
-    env_path = os.environ.get("FLIGHT_MCP_BROWSER_PATH")
-    if env_path:
-        return env_path
-
-    engine = (os.environ.get("FLIGHT_MCP_BROWSER") or "edge").strip().lower()
-    if engine not in {"edge", "chrome"}:
-        logger.warning("Unknown FLIGHT_MCP_BROWSER=%r, falling back to 'edge'", engine)
-        engine = "edge"
-
-    primary, secondary = (
-        (EDGE_CANDIDATES, CHROME_CANDIDATES)
-        if engine == "edge"
-        else (CHROME_CANDIDATES, EDGE_CANDIDATES)
-    )
-    for path in primary:
-        if os.path.exists(path):
-            return path
-    for path in secondary:
-        if os.path.exists(path):
-            logger.warning(
-                "FLIGHT_MCP_BROWSER=%s not found; falling back to %s", engine, path
-            )
-            return path
-    return None
+    return BrowserDiscovery(PROJECT_ROOT).resolve("FLIGHT_MCP").path
 
 
 class FlightRouteSearcher:
@@ -106,31 +64,11 @@ class FlightRouteSearcher:
 
         self.base_url = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
 
-        co = ChromiumOptions()
-        # 显式全新临时 profile（每查必新）：保证航班查询永远处于未登录状态，
-        # 不依赖 DrissionPage PortFinder 的端口-目录复用行为。
-        # 注意：set_user_data_path 必须配合 set_local_port（单独使用会因 address 为空崩溃）。
-        co.set_local_port(_free_port())
         self._profile_dir = tempfile.mkdtemp(prefix="flightctrip-profile-")
-        co.set_user_data_path(self._profile_dir)
-        browser_path = _resolve_browser_path()
-        if browser_path:
-            co.set_browser_path(browser_path)
-        if headless:
-            logger.warning(
-                "FLIGHT_MCP_HEADLESS=1: Ctrip (whaleguard) blocks headless "
-                "browsers; expect HTTP 432 / SCRAPING_FAILED."
-            )
-            co.headless()
-        else:
-            # 后台打开：窗口最小化启动，任务栏可见，不抢占前台焦点。
-            co.set_argument('--start-minimized')
-            co.set_argument('--window-size', '1280,900')
-            # 最小化窗口会被 Chromium 节流，导致懒加载滚动拿不到数据。
-            co.set_argument('--disable-backgrounding-occluded-windows')
-            co.set_argument('--disable-renderer-backgrounding')
-            co.set_argument('--disable-background-timer-throttling')
-        self.page = ChromiumPage(co)
+        self._session = OwnedBrowser(
+            "FLIGHT_MCP", PROJECT_ROOT, self._profile_dir, temporary=True,
+        )
+        self.page = self._session.open(ChromiumPage, ChromiumOptions, headless=headless)
         # 兜底：清空浏览器内全部 cookie，双保险确保航班查询永远未登录
         # （即使未来 profile 策略变化，也不会把任何登录态带进航班抓取）。
         try:
@@ -1058,13 +996,7 @@ class FlightRouteSearcher:
         return filtered, warnings
 
     def close(self):
-        """关闭浏览器"""
-        if hasattr(self, "page"):
-            self.page.quit()
-            logger.info("浏览器已关闭")
-        profile_dir = getattr(self, "_profile_dir", None)
-        if profile_dir:
-            shutil.rmtree(profile_dir, ignore_errors=True)
+        self._session.close()
 
 
 def searchFlightRoutes(
@@ -1313,7 +1245,7 @@ def searchFlightRoutes(
         primary_error = {
             "status": "error",
             "message": f"查询航班路线失败: {str(e)}",
-            "error_code": "SEARCH_FAILED",
+            "error_code": getattr(e, "code", "SEARCH_FAILED"),
             "requested_data_source": normalized_preference,
             "data_source": "ctrip_web_scraping",
         }

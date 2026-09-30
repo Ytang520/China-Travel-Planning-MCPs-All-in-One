@@ -55,50 +55,24 @@ If Node.js, npm, or Python is missing, **do not guess paths**: follow the instal
 npm install
 ```
 
-## 3. Install flight provider dependencies
+## 3. Install flight and hotel Python dependencies
 
-Stay aligned with **Prefer uv** above: **try uv first**; fall back to pip only when the user insists.
+Both Python providers use Python 3.11+ in the repository root `.venv`. Reuse an existing suitable environment; otherwise create it from the repository root:
 
-```bash
-cd FlightTicketMCP
-uv venv
-uv pip install -r requirements.txt
-cd ..
+```sh
+uv venv .venv --python 3.11
 ```
 
-If `uv` is unavailable, use `pip`:
+Windows PowerShell:
 
-```bash
-cd FlightTicketMCP
-pip install -r requirements.txt
-cd ..
+```powershell
+uv pip install --python .venv/Scripts/python.exe -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
-Depending on the user's Python environment, this is also valid:
+macOS / Linux:
 
-```bash
-cd FlightTicketMCP
-pip install -e .
-cd ..
-```
-
-## 3.6 Install hotel provider dependencies
-
-Same approach as the flight provider: **uv first**, pip only when the user insists.
-
-```bash
-cd HotelTicketMCP
-uv venv
-uv pip install -r requirements.txt
-cd ..
-```
-
-If `uv` is unavailable, use `pip`:
-
-```bash
-cd HotelTicketMCP
-pip install -r requirements.txt
-cd ..
+```sh
+uv pip install --python .venv/bin/python -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
 ## 3.5 Install and build 12306-mcp sub-project
@@ -177,7 +151,7 @@ question: "Enable Ctrip hotel search (hotel domain)? ⚠ This feature mimics hum
 options:
   - "Enable, I accept the risk" → set HOTEL_MCP_CONSENT=yes
   - "Disable" → do not set HOTEL_MCP_CONSENT (or set no); hotel tools return CONSENT_REQUIRED
-Note: hotel searches wait a random 30s–5min between calls to reduce risk. Hotel data requires a Ctrip login; when a search returns LOGIN_REQUIRED, call hotel_ctrip_login so the user can log in.
+Note: hotel searches wait a random 30s–5min between calls. On LOGIN_REQUIRED, call hotel_ctrip_login to request a native MCP question. On USER_INTERACTION_REQUIRED, use AskUserQuestion or the host's native input tool, wait for the actual answer, then pass user_action. See [Hotel login interaction](hotel-login.md).
 ```
 
 ### 4.2 Generate .env files
@@ -207,15 +181,15 @@ DIDI_MCP_KEY=user_didi_key
 # Optional overrides
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
-FLIGHT_MCP_PYTHON_COMMAND=python
+# FLIGHT_MCP_PYTHON_COMMAND=/absolute/path/to/python
 # Browser engine: A=edge (default) / B=chrome (shared by flight and hotel)
 FLIGHT_MCP_BROWSER=edge
 HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP
-HOTEL_MCP_PYTHON_COMMAND=python
+# HOTEL_MCP_PYTHON_COMMAND=/absolute/path/to/python
 HOTEL_MCP_BROWSER=edge
 # Custom browser path (optional, takes precedence over the engine vars)
-# FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
-# HOTEL_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# FLIGHT_MCP_BROWSER_PATH=/absolute/path/to/msedge.exe
+# HOTEL_MCP_BROWSER_PATH=/absolute/path/to/msedge.exe
 # Headless mode (not recommended: blocked by Ctrip whaleguard)
 # FLIGHT_MCP_HEADLESS=1
 # HOTEL_MCP_HEADLESS=1
@@ -226,7 +200,7 @@ HOTEL_MCP_BROWSER=edge
 # HOTEL_MCP_MAX_DELAY=300
 ```
 
-> **Windows path note**: relative paths in gateway-injected env vars resolve against the **child process cwd** (e.g. a relative `FLIGHT_MCP_PYTHON_COMMAND` is joined under `FLIGHT_MCP_PROJECT_ROOT`). Use **absolute paths** for `FLIGHT_MCP_PYTHON_COMMAND`, `HOTEL_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, `FLIGHT_MCP_BROWSER_PATH`, and `HOTEL_MCP_BROWSER_PATH` (e.g. `C:/Users/xxx/.../HotelTicketMCP/.venv/Scripts/python.exe`).
+> Project roots/train entry resolve against the repository; interpreter paths against the provider root. Windows uses `.venv/Scripts/python.exe`; macOS/Linux use `.venv/bin/python`. Prefer absolute overrides.
 
 > **Security**: **Never print real keys** in chat; verify `.env` is in `.gitignore` after writing.
 
@@ -297,7 +271,7 @@ For MCP connection, authentication, schema, or response-format issues:
 4. For Amap and DiDi key issues, consult `.opencode/skills/error-processing/mcp-error-references.json`.
 5. For flight failures, call `gateway_get_config` first to inspect provider connectivity and browser strategy (engine, headless flag, path override). Common browser-related causes: no Chrome/Edge installed, wrong `FLIGHT_MCP_BROWSER` engine, or `FLIGHT_MCP_HEADLESS=1` being blocked by Ctrip.
 6. Hotel search returning `CONSENT_REQUIRED`: the user has not consented to the risk terms (`.env` `HOTEL_MCP_CONSENT` is not `yes`); re-ask per §4.1 D.
-7. Hotel search returning `LOGIN_REQUIRED`: no login state and cookie injection failed. **Stop the current test and notify the user to log in**: run `node scripts/mcp-test.mjs login` (calls `hotel_ctrip_login`, which opens a visible browser window), and have the user log in manually (QR or password; waits up to 14 minutes by default, adjustable via `HOTEL_MCP_LOGIN_TIMEOUT`). **The login window stays open until login completes or times out — do not close the window or kill the process hosting it during this period**, or the user cannot finish logging in. Cookies are saved automatically on success, and the `login` mode re-runs a hotel search to verify; after that no further login is needed (searches inject the saved cookies).
+7. On `LOGIN_REQUIRED`, call `hotel_ctrip_login` to ask whether to open the login page or cancel. On `USER_INTERACTION_REQUIRED`, use AskUserQuestion or the host's native input tool and wait for the actual answer before passing `user_action=open_login` or `cancel`. Choosing to open displays Ctrip's login page directly. Credentials stay in the browser; the default wait is 14 minutes (`HOTEL_MCP_LOGIN_TIMEOUT`: 1–840 seconds). Success retries the original query once; cancellation, window closure, or failure stops recovery. Interactive terminals can run `node scripts/mcp-test.mjs login`; noninteractive terminals may use `--login-action=open_login` only after an actual affirmative answer. See [Hotel login interaction](hotel-login.md).
 8. Never print full environment dumps, tokens, real secrets, or private account data.
 
 ## 8. Post-deployment smoke test
@@ -339,13 +313,13 @@ Expected: A list of high-speed train options. If it fails or `station_code` reso
 
 ### 8.3 Test flight search (flight domain)
 
-Query flights from **Shanghai** to **Beijing** for today:
+Query flights from **Shanghai** to **Beijing** seven days ahead in Asia/Shanghai:
 
 - Tool: `flight_flight_ticket_mcp_server_searchFlightRoutes`
-- Params: `departure_city` = "上海", `destination_city` = "北京", `departure_date` = today, `data_source_preference` = "default" (or `auto`; there is **no `format` parameter**); optional hour filters: `earliestStartTime` / `latestStartTime` (0-23) / `earliestArrivalTime` / `latestArrivalTime`
+- Params: `departure_city` = "上海", `destination_city` = "北京", `departure_date` = Asia/Shanghai today +7 days, `data_source_preference` = "default" (or `auto`; there is **no `format` parameter**); optional hour filters: `earliestStartTime` / `latestStartTime` (0-23) / `earliestArrivalTime` / `latestArrivalTime`
 - Returns: JSON text with `status`, `flight_count`, `flights`, `formatted_output`, etc.
 
-Expected: A list of flights (takes 1–8 minutes; a **minimized browser window** appears briefly in the taskbar without stealing focus). If it fails, check: Chrome/Edge installed, `FLIGHT_MCP_BROWSER` engine choice, `FLIGHT_MCP_HEADLESS` must not be 1 (blocked by Ctrip), `FlightTicketMCP/.venv` exists, and `FLIGHT_MCP_PYTHON_COMMAND` is correct. Note: the flight transfer tool is intentionally absent.
+Expected: A list of flights (takes 1–8 minutes; a **minimized browser window** appears briefly in the taskbar without stealing focus). If it fails, check: Chrome/Edge installed, `FLIGHT_MCP_BROWSER` engine choice, `FLIGHT_MCP_HEADLESS` must not be 1 (blocked by Ctrip), `root .venv or FlightTicketMCP/.venv` exists, and `FLIGHT_MCP_PYTHON_COMMAND` is correct. Note: the flight transfer tool is intentionally absent.
 
 ### 8.4 Test hotel search (hotel domain)
 
@@ -354,7 +328,7 @@ Query future dates for Wuhan hotels (first search has no interval wait):
 - Tool: `hotel_ctrip_searchHotels`
 - Params: `city` = "武汉", `checkin`/`checkout` = today +7/+9 days, `limit` = 5
 
-Expected: A hotel list (`status: success`, `count`, `hotels[]`; takes ~1–2 minutes with a minimized browser window). If it returns `CONSENT_REQUIRED`, check `HOTEL_MCP_CONSENT=yes` in `.env` and the §4.1 D consent flow; if `LOGIN_REQUIRED`, **stop the test and notify the user to log in** — run `node scripts/mcp-test.mjs login`, which opens a visible browser window and waits for the user (up to 14 minutes by default); **do not close the window or interrupt the process** during this period. On success the mode automatically re-runs a hotel search to verify (login state is saved for reuse). Note: hotel searches are separated by a random 30s–5min interval, so a second consecutive test will wait.
+Expected: A hotel list (`status: success`, `count`, `hotels[]`; about 1–2 minutes). For `CONSENT_REQUIRED`, check the existing risk-consent setting. Missing login triggers an interactive question in `hotel` mode. On `USER_INTERACTION_REQUIRED` from a noninteractive terminal, the Agent must invoke a native question and wait for the answer. Choosing to open displays the login page directly; success resumes the original query once. `LOGIN_STATE_UNKNOWN` means page loading or blocking needs inspection, not necessarily session expiry. Consecutive searches have a random 30s–5min interval.
 
 ### 8.5 Test map geocoding (map domain)
 
@@ -388,3 +362,5 @@ Report the test results in this format:
 ```
 
 If all domains pass, the installation was successful. If any domain fails, consult §7.
+
+Browser acceptance requires `node scripts/mcp-test.mjs flight` and `node scripts/mcp-test.mjs hotel` on every platform. Both validate nonempty business results; connectivity alone is insufficient. See the [runtime guide](browser-runtime.md) for configuration, discovery, recovery, and simulated-platform limitations.

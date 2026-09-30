@@ -31,10 +31,8 @@
 claude mcp add --transport stdio \
   --env AMAP_MAPS_API_KEY=YOUR_AMAP_MAPS_API_KEY \
   --env DIDI_MCP_KEY=YOUR_DIDI_MCP_KEY \
-  --env FLIGHT_MCP_PYTHON_COMMAND=python \
   --env TRAIN_12306_ENTRY=./12306-mcp/build/index.js \
   --env FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP \
-  --env HOTEL_MCP_PYTHON_COMMAND=python \
   --env HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP \
   --env HOTEL_MCP_CONSENT=no \
   --scope project travel-mcp-gateway -- node ./build/index.js
@@ -53,3 +51,5 @@ claude mcp add --transport stdio \
 ---
 
 **Security**: never commit real API keys; redact secrets in logs and support chats.
+
+解释器默认校验根 `.venv`，然后对应 provider 的 `.venv`。Windows 使用 `Scripts/python.exe`，macOS/Linux 使用 `bin/python`。根 `.env` 仅由测试脚本读取；MCP 客户端通过自身环境配置注入变量。详见[运行指南](../browser-runtime.md)。

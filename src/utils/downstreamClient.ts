@@ -14,6 +14,17 @@ import type {
 } from "../types.js";
 import { jsonSchemaToZod } from "./jsonSchemaToZod.js";
 import { normalizeToolResult } from "./toolResult.js";
+import { resolvePythonInterpreter } from "./pythonInterpreter.js";
+import { prepareHotelLogin, withHotelRecovery } from "../domains/hotel/ctrip/loginInteraction.js";
+
+const activeClients = new Set<Client>();
+let closing = false;
+
+export const closeDownstreamClients = async () => {
+  closing = true;
+  await Promise.allSettled([...activeClients].map((client) => client.close()));
+  activeClients.clear();
+};
 
 const normalizeSegment = (value: string) => {
   return value.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -99,57 +110,90 @@ export const connectAndRegisterProvider = async (
     return null;
   }
 
+  if (provider.python && provider.transport.kind === "stdio") {
+    const resolved = await resolvePythonInterpreter(provider.python);
+    provider.transport.command = resolved.command;
+    provider.python.resolvedSource = resolved.source;
+  }
+  if (closing) throw new Error("Gateway is shutting down");
+
   const client = createClient();
   const transport = createTransport(provider);
-  await client.connect(transport);
+  const registrations: ReturnType<McpServer["registerTool"]>[] = [];
+  activeClients.add(client);
+  try {
+    await client.connect(transport);
 
-  const { tools } = await client.listTools();
-  const retainedTools = tools
-    .map(toToolDefinition)
-    .filter((tool) => shouldRetainTool(provider, tool.name));
+    const { tools } = await client.listTools();
+    if (closing) throw new Error("Gateway is shutting down");
+    const retainedTools = tools
+      .map(toToolDefinition)
+      .filter((tool) => shouldRetainTool(provider, tool.name));
 
-  const registeredTools: RegisteredGatewayTool[] = [];
+    const registeredTools: RegisteredGatewayTool[] = [];
 
-  for (const tool of retainedTools) {
-    const gatewayName = buildGatewayToolName(provider, tool.name);
-    const inputSchema = jsonSchemaToZod(tool.inputSchema as Record<string, unknown>);
+    for (const tool of retainedTools) {
+      const gatewayName = buildGatewayToolName(provider, tool.name);
+      const inputSchema = jsonSchemaToZod(tool.inputSchema as Record<string, unknown>);
 
-    server.registerTool(
-      gatewayName,
-      {
-        title: tool.title ?? gatewayName,
-        description: toToolDescription(provider, tool),
-        inputSchema,
-        annotations: tool.annotations,
-      },
-      async (args) => {
-        const result = (await client.callTool(
-          {
-            name: tool.name,
-            arguments: args as Record<string, unknown>,
-          },
-          undefined,
-          { timeout: provider.requestTimeout },
-        )) as CallToolResult | { toolResult: unknown; _meta?: Record<string, unknown> };
+      const registration = server.registerTool(
+        gatewayName,
+        {
+          title: tool.title ?? gatewayName,
+          description: toToolDescription(provider, tool),
+          inputSchema,
+          annotations: tool.annotations,
+        },
+        async (args, extra) => {
+          let forwardedArgs = args as Record<string, unknown>;
+          const hotel = provider.domain === "hotel" && provider.providerName === "ctrip";
+          if (hotel && tool.name === "login") {
+            const prepared = await prepareHotelLogin(server, forwardedArgs, extra);
+            if (prepared.result) return prepared.result;
+            forwardedArgs = prepared.args!;
+          }
+          const result = (await client.callTool(
+            {
+              name: tool.name,
+              arguments: forwardedArgs,
+            },
+            undefined,
+            { timeout: provider.requestTimeout, signal: extra.signal,
+              ...(extra._meta?.progressToken !== undefined ? { onprogress: async (progress) => {
+                await extra.sendNotification({ method: "notifications/progress", params: {
+                  ...progress, progressToken: extra._meta!.progressToken!,
+                } }).catch(() => undefined);
+              } } : {}),
+            },
+          )) as CallToolResult | { toolResult: unknown; _meta?: Record<string, unknown> };
 
-        return normalizeToolResult(result);
-      },
-    );
+          const normalized = normalizeToolResult(result);
+          return hotel && tool.name === "searchHotels" ? withHotelRecovery(normalized, forwardedArgs) : normalized;
+        },
+      );
+      registrations.push(registration);
 
-    registeredTools.push({
-      gatewayName,
-      downstreamName: tool.name,
-      description: tool.description,
-      inputSchema: tool.inputSchema,
-    });
+      registeredTools.push({
+        gatewayName,
+        downstreamName: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      });
+    }
+
+    return {
+      provider,
+      tools: retainedTools,
+      registeredTools,
+      client,
+    };
+  } catch (error) {
+    for (const registration of registrations) registration.remove();
+    await client.close().catch(() => undefined);
+    await transport.close().catch(() => undefined);
+    activeClients.delete(client);
+    throw error;
   }
-
-  return {
-    provider,
-    tools: retainedTools,
-    registeredTools,
-    client,
-  };
 };
 
 export const createInventorySchema = () =>

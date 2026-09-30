@@ -32,23 +32,23 @@ You can also read the [Agent installation guide](docs/agent-install.md).
 npm install
 ```
 
-Install flight provider dependencies (example with `uv`):
+Both Python providers use Python 3.11+ in the repository root `.venv`. Reuse an existing suitable environment; otherwise create it from the repository root:
 
-```bash
-cd FlightTicketMCP
-uv venv
-uv pip install -r requirements.txt
+```sh
+uv venv .venv --python 3.11
 ```
 
-Install hotel provider dependencies:
+Windows PowerShell:
 
-```bash
-cd HotelTicketMCP
-uv venv
-uv pip install -r requirements.txt
+```powershell
+uv pip install --python .venv/Scripts/python.exe -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
-Or with pip: `pip install -r requirements.txt` or `pip install -e .`
+macOS / Linux:
+
+```sh
+uv pip install --python .venv/bin/python -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
+```
 
 Create `.env` from the template, fill in your keys, then:
 
@@ -58,7 +58,7 @@ cp .env.example .env
 
 ```bash
 npm run build
-node build/index.js
+node scripts/mcp-test.mjs config
 ```
 
 ## Environment variables
@@ -67,14 +67,14 @@ node build/index.js
 |----------|---------|
 | `AMAP_MAPS_API_KEY` | Obtain a key from [Amap MCP Server](https://lbs.amap.com/api/mcp-server/summary) for `map/amap` |
 | `DIDI_MCP_KEY` | Obtain a key from [DiDi MCP](https://mcp.didichuxing.com/) for `taxi/didi` (place search + fare estimate) |
-| `FLIGHT_MCP_PYTHON_COMMAND` | Python executable for FlightTicketMCP (default: `python`; with uv point it at `.venv/Scripts/python.exe`) |
+| `FLIGHT_MCP_PYTHON_COMMAND` | Python executable for FlightTicketMCP (auto: usable root `.venv`, then provider `.venv`; explicit override supported) |
 | `TRAIN_12306_ENTRY` | Optional path to 12306 MCP entry script |
 | `FLIGHT_MCP_PROJECT_ROOT` | Optional path to `FlightTicketMCP` root |
 | `FLIGHT_MCP_BROWSER` | Browser engine for flight scraping: A=`edge` (default) / B=`chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `FLIGHT_MCP_BROWSER`) |
 | `FLIGHT_MCP_HEADLESS` | Optional: `1` enables headless mode (not recommended—Ctrip whaleguard blocks it) |
 | `HOTEL_MCP_PROJECT_ROOT` | Optional path to `HotelTicketMCP` root |
-| `HOTEL_MCP_PYTHON_COMMAND` | Python executable for HotelTicketMCP (default: `python`; with uv point it at `.venv/Scripts/python.exe`) |
+| `HOTEL_MCP_PYTHON_COMMAND` | Python executable for HotelTicketMCP (auto: usable root `.venv`, then provider `.venv`; explicit override supported) |
 | `HOTEL_MCP_BROWSER` | Browser engine for hotel scraping: `edge` (default) / `chrome` (same as flight) |
 | `HOTEL_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `HOTEL_MCP_BROWSER`) |
 | `HOTEL_MCP_CONSENT` | ⚠ Risk-consent switch for hotel search: tools only work with `yes` (see "Hotel search risk notice") |
@@ -83,7 +83,7 @@ node build/index.js
 
 Additional flight-related variables are documented in `FlightTicketMCP/.env.example`.
 
-> **Windows path note**: subprocesses run with `FLIGHT_MCP_PROJECT_ROOT` / `HOTEL_MCP_PROJECT_ROOT` as cwd, so relative paths resolve against the child cwd. Use absolute paths for `FLIGHT_MCP_PYTHON_COMMAND`, `HOTEL_MCP_PYTHON_COMMAND`, `TRAIN_12306_ENTRY`, `FLIGHT_MCP_BROWSER_PATH`, and `HOTEL_MCP_BROWSER_PATH`.
+> **Paths and configuration**: project roots/train entry resolve against the repository; interpreter/browser paths against the provider root. Prefer absolute overrides. The gateway reads host environment variables; the test script loads root `.env`. Windows interpreters use `.venv/Scripts/python.exe`; macOS/Linux use `.venv/bin/python`.
 
 ### Browser requirements
 
@@ -96,7 +96,7 @@ Ctrip (flights.ctrip.com) uses a whaleguard anti-bot WAF that blocks headless br
 
 **Hotel search (hotels.ctrip.com) also requires Chrome or Edge** (engine via `HOTEL_MCP_BROWSER`, same default as flight) and **requires a Ctrip login** (guests are redirected to the login page):
 
-- Login state is established by the `hotel_ctrip_login` tool (opens a visible window for manual login) and saved to a gitignored cookie file for reuse; **each search/login uses an independent browser session that is closed when done**, and login state is restored by cookie-file injection; if injection still fails the server returns `LOGIN_REQUIRED` and stops until the user logs in.
+- `hotel_ctrip_login` first requests a native user choice, then opens Ctrip's login page directly in a visible browser. Verified cookies are saved for reuse and the original search is retried once. Clients can use MCP elicitation or the documented AskUserQuestion/native-input fallback. **Each search/login closes its browser when finished.** See the [hotel login interaction contract](docs/hotel-login.md).
 
 ### Hotel search risk notice (important)
 
@@ -111,6 +111,19 @@ Hotel search drives a real browser that mimics human browsing and scrapes login-
 - Train: **direct** and **interline/transfer** are supported (`train_12306_get_interline_tickets`, with the 12306 interline path fixed after the upstream site rework);
 - Flight: **direct only** — `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace` relies on an unstable scraping chain and is hidden from the gateway;
 - Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, guest counts, price/star/score/room-type filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`); `hotel_ctrip_login` establishes the login state. See "Hotel search risk notice" above.
+
+### Live browser checks after installation
+
+Run these same examples on Windows, macOS, or Linux:
+
+```sh
+node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs hotel
+```
+
+Defaults use Asia/Shanghai: Shanghai → Beijing flights seven days ahead; Wuhan hotels with check-in/check-out seven/nine days ahead. Optional dates: `flight YYYY-MM-DD` or `hotel checkin checkout`. Checks require nonempty meaningful records and matching metadata/counts. Empty results, login requirements and site blocks cannot pass. Flight/hotel rows from `npm run check` establish connectivity only.
+
+Browser discovery checks explicit paths, registered installations, named `shutil.which()` calls and finite common locations before one final unrestricted DrissionPage discovery attempt. Hotel shutdown/recovery supports all three platform branches and preserves login data. See the [runtime guide](docs/browser-runtime.md). Simulated macOS/Linux tests do not establish native execution.
 
 ## MCP client configuration
 
@@ -127,8 +140,6 @@ Minimal **`mcpServers`** snippet compatible with **Cursor** when the MCP subproc
       "env": {
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
-        "FLIGHT_MCP_PYTHON_COMMAND": "python",
-        "HOTEL_MCP_PYTHON_COMMAND": "python",
         "HOTEL_MCP_CONSENT": "yes",
         "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
         "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP",

@@ -10,6 +10,8 @@ import logging
 import logging.handlers
 import os
 import sys
+from functools import partial
+print = partial(print, file=sys.stderr)
 
 # FastMCP 2.8.1+ requires this env to be set
 os.environ.setdefault("FASTMCP_LOG_LEVEL", "INFO")
@@ -52,11 +54,13 @@ def load_env_file(env_file_path=None):
 
 load_env_file()
 
-from fastmcp import FastMCP  # noqa: E402
+from .utils.browser_runtime import browser_lifespan, install_shutdown_handlers, shutdown_browsers
+from fastmcp import FastMCP, Context  # noqa: E402
+from typing import Literal
 
 from .tools import hotel_login_tools, hotel_search_tools  # noqa: E402
 
-mcp = FastMCP("Hotel Ticket Server")
+mcp = FastMCP("Hotel Ticket Server", lifespan=browser_lifespan)
 
 
 def get_transport_config():
@@ -160,14 +164,18 @@ def register_tools():
     # 下游工具名固定为 login，使网关注册名为 hotel_ctrip_login
     # （网关命名规则为 {domain}_{provider}_{toolName}）
     @mcp.tool(name="login")
-    def ctripHotelLogin():
+    async def ctripHotelLogin(ctx: Context, user_action: Literal["open_login", "cancel"] | None = None,
+                              return_url: str | None = None):
         """携程酒店登录助手 - 打开可见浏览器窗口，等待用户手动完成携程登录，
         然后把登录 cookie 保存到本地文件供后续搜索复用（默认最多等待 14 分钟，
         可用 HOTEL_MCP_LOGIN_TIMEOUT 调整；登录窗口保持打开直至登录完成或超时）。
 
-        ⚠ 仅在搜索返回 LOGIN_REQUIRED 错误时调用；使用本工具即表示同意风险条款。
+        搜索返回 LOGIN_REQUIRED 后调用。网关将先弹出登录问题；若收到
+        USER_INTERACTION_REQUIRED，必须用 AskUserQuestion 或宿主原生提问工具
+        等待用户选择后传 user_action=open_login/cancel。不要在聊天中索要密码或验证码。
+        return_url 使用搜索返回的官方酒店页地址；成功后以原参数重试搜索一次。
         """
-        return hotel_login_tools.ctripHotelLogin()
+        return await hotel_login_tools.login_with_progress(user_action, return_url, ctx)
 
     logging.getLogger(__name__).info(
         "MCP工具注册完成 - 已注册工具: searchHotels, login"
@@ -183,7 +191,7 @@ def run_server():
         register_tools()
         print("All tools registered successfully")
         if config["transport"] == "stdio":
-            mcp.run()
+            mcp.run(show_banner=False)
         else:
             host = os.getenv("MCP_HOST", "127.0.0.1")
             port = int(os.getenv("MCP_PORT", "8080"))
@@ -197,10 +205,14 @@ def run_server():
 
 def main():
     try:
+        install_shutdown_handlers()
         run_server()
     except Exception as e:
         print(f"Fatal error: {e}")
         sys.exit(1)
+
+    finally:
+        shutdown_browsers()
 
 
 if __name__ == "__main__":

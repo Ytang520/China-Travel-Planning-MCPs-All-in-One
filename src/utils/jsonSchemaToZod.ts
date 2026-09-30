@@ -126,6 +126,8 @@ export const jsonSchemaToZod = (
       return withDescription(z.number().int(), normalizedSchema.description);
     case "boolean":
       return withDescription(z.boolean(), normalizedSchema.description);
+    case "null":
+      return withDescription(z.null(), normalizedSchema.description);
     case "array":
       return fromArray(normalizedSchema);
     case "object":

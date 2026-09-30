@@ -1,11 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute, relative, resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import { z } from "zod";
 
 import { getRuntimeConfig } from "./config.js";
 import { getFlightProviders } from "./domains/flight/registry.js";
 import { getHotelProviders } from "./domains/hotel/registry.js";
+import { HOTEL_LOGIN_INSTRUCTIONS } from "./domains/hotel/ctrip/loginInteraction.js";
 import { getMapProviders } from "./domains/map/registry.js";
 import { getTaxiProviders } from "./domains/taxi/registry.js";
 import { getTrainProviders } from "./domains/train/registry.js";
@@ -17,6 +19,7 @@ import type {
 } from "./types.js";
 import {
   connectAndRegisterProvider,
+  closeDownstreamClients,
   createInventorySchema,
   summarizeInputSchema,
 } from "./utils/downstreamClient.js";
@@ -31,7 +34,7 @@ const server = new McpServer({
     "Hotel search requires Ctrip login and explicit risk consent (HOTEL_MCP_CONSENT=yes). " +
     "For taxi fare estimates, always use taxi_didi_maps_textsearch before taxi_didi_taxi_estimate. " +
     "For other map and route tasks, prefer map_amap_* tools.",
-});
+}, { instructions: HOTEL_LOGIN_INSTRUCTIONS });
 
 const getProviders = (): DownstreamProviderDefinition[] => {
   return [
@@ -220,6 +223,15 @@ const registerInventoryFeatures = (
         return relativePath.replaceAll("\\", "/");
       };
 
+      const pythonFor = (domain: string, fallback: string) => {
+        const provider = connections.find((c) => c.provider.domain === domain)?.provider;
+        return {
+          command: provider?.transport.kind === "stdio" ? provider.transport.command : fallback,
+          source: provider?.python?.resolvedSource ?? "unavailable",
+        };
+      };
+      const flightPython = pythonFor("flight", config.flightPythonCommand);
+      const hotelPython = pythonFor("hotel", config.hotelPythonCommand);
       const payload = {
         project: {
           name: config.projectName,
@@ -228,8 +240,10 @@ const registerInventoryFeatures = (
         },
         command: {
           node: process.version,
-          flightPythonCommand: toPublicPath(config.flightPythonCommand),
-          hotelPythonCommand: toPublicPath(config.hotelPythonCommand),
+          flightPythonSource: flightPython.source,
+          hotelPythonSource: hotelPython.source,
+          flightPythonCommand: toPublicPath(flightPython.command),
+          hotelPythonCommand: toPublicPath(hotelPython.command),
           train12306Entry: toPublicPath(config.train12306Entry),
         },
         browser: {
@@ -239,6 +253,7 @@ const registerInventoryFeatures = (
           note: "Ctrip (flights.ctrip.com) blocks headless browsers (whaleguard HTTP 432); default is a silent, non-focused visible window.",
         },
         hotelBrowser: {
+          browserPathOverride: env.HOTEL_MCP_BROWSER_PATH ? "set" : "unset",
           engine: (env.HOTEL_MCP_BROWSER ?? "edge").toLowerCase(),
           headless: env.HOTEL_MCP_HEADLESS === "1",
           consent: (env.HOTEL_MCP_CONSENT ?? "no").toLowerCase() === "yes" ? "yes" : "no",
@@ -386,6 +401,7 @@ const start = async () => {
   const connections: ProviderConnectionResult[] = [];
 
   for (const provider of providers) {
+    if (stopping) break;
     try {
       const connection = await connectAndRegisterProvider(server, provider);
       if (!connection) {
@@ -409,12 +425,40 @@ const start = async () => {
 
   registerInventoryFeatures(inventory, connections);
 
-  const transport = new StdioServerTransport();
+  if (stopping) return;
+  const transport = new StdioServerTransport(gatewayInput);
   await server.connect(transport);
   console.error("[gateway] travel MCP gateway running on stdio");
 };
 
-start().catch((error) => {
+let stopping = false;
+let shutdownPromise: Promise<void> | undefined;
+const gatewayInput = new PassThrough();
+const shutdown = () => {
+  stopping = true;
+  shutdownPromise ??= (async () => {
+    process.stdin.unpipe(gatewayInput);
+    await closeDownstreamClients();
+    await server.close();
+    gatewayInput.destroy();
+  })();
+  return shutdownPromise;
+};
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    void shutdown().finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
+  });
+}
+process.stdin.once("end", () => { void shutdown(); });
+process.stdin.once("close", () => { void shutdown(); });
+process.stdin.once("error", () => { void shutdown(); });
+// Consume host input immediately so EOF during provider startup is observable.
+// The transport consumes buffered initialization messages once startup finishes.
+process.stdin.pipe(gatewayInput);
+
+start().catch(async (error) => {
   console.error("[gateway] fatal startup error:", error);
+  await shutdown();
   process.exit(1);
 });

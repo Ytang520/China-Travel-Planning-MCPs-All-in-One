@@ -6,6 +6,8 @@ cookie 保存在 gitignored 的文件中（默认 HotelTicketMCP/ctrip-hotel-coo
 
 import json
 import os
+import tempfile
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 
@@ -27,7 +29,7 @@ def load_cookies(path=None):
         return []
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return []
     cookies = data.get("cookies", data) if isinstance(data, dict) else data
     if not isinstance(cookies, list):
@@ -35,7 +37,7 @@ def load_cookies(path=None):
     return [c for c in cookies if isinstance(c, dict) and c.get("name")]
 
 
-def save_cookies(cookies, path=None):
+def save_cookies(cookies, path=None, *, commit_lock=None, cancelled=None):
     """把 cookie dict 列表写入文件（UTF-8，含保存时间），返回文件路径。"""
     p = Path(path) if path else default_cookie_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -43,9 +45,21 @@ def save_cookies(cookies, path=None):
         "cookies": cookies,
         "saved_at": datetime.now().isoformat(),
     }
-    p.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=p.parent,
+                                         prefix=f".{p.name}.", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(payload, stream, ensure_ascii=False, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        with commit_lock if commit_lock is not None else nullcontext():
+            if cancelled is not None and cancelled.is_set():
+                return None
+            os.replace(temporary, p)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return p
 
 

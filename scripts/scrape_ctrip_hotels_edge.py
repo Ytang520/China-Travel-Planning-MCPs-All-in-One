@@ -44,8 +44,8 @@ async () => {
           .find(a => /out of 5/.test(a || '')) || '';
         const distance = (lines.find(l => l.startsWith('距')) || '').replace('查看地图', '').trim();
         const reviews = (lines.find(l => l.includes('条点评')) || '').replace(/^(超棒|很好|不错|一般|差)/, '');
-        let room = lines.find(l => /房|床/.test(l) && !l.startsWith('距') && !l.startsWith('热卖') && l.length < 60) || '';
-        if (!/房|床/.test(room)) room = '';
+        // Reviews and hotel names can contain 房/床; only trust the room-name node.
+        const room = (el.querySelector('.room-info .room-name')?.innerText || '').trim();
         return {
           name: lines[0] || '',
           stars: (ariaStar || '').split(' ')[0] || '',

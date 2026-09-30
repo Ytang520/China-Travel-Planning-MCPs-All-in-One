@@ -6,6 +6,8 @@ Supports multiple transports: stdio, sse, and streamable-http using standalone F
 
 import os
 import sys
+from functools import partial
+print = partial(print, file=sys.stderr)
 from typing import Optional
 
 # Set required environment variable for FastMCP 2.8.1+
@@ -64,6 +66,7 @@ def load_env_file(env_file_path=None):
 # Load environment variables from .env file
 load_env_file()
 
+from .utils.browser_runtime import browser_lifespan, install_shutdown_handlers, shutdown_browsers
 from fastmcp import FastMCP
 from .tools import flight_search_tools
 from .tools import date_tools
@@ -231,7 +234,7 @@ def setup_logging(debug_mode):
 
 
 # Initialize FastMCP server
-mcp = FastMCP("Flight Ticket Server")
+mcp = FastMCP("Flight Ticket Server", lifespan=browser_lifespan)
 
 
 def register_tools():
@@ -400,7 +403,7 @@ def run_server():
         if config["transport"] == "stdio":
             print("Starting stdio transport...")
             logger.info("启动stdio传输协议...")
-            mcp.run()
+            mcp.run(show_banner=False)
         elif config["transport"] == "sse":
             print(
                 f"Starting SSE transport on {config['host']}:{config['port']}{config['sse_path']}"
@@ -447,10 +450,14 @@ def run_server():
 def main():
     """Main entry point for the application."""
     try:
+        install_shutdown_handlers()
         run_server()
     except Exception as e:
         print(f"Fatal error: {e}")
         sys.exit(1)
+
+    finally:
+        shutdown_browsers()
 
 
 if __name__ == "__main__":

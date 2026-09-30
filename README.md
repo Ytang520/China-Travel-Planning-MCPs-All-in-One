@@ -32,23 +32,23 @@ https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One
 npm install
 ```
 
-安装航班子项目依赖（示例使用 `uv`）：
+两个 Python provider 使用仓库根目录 `.venv`，Python 需 3.11+。已有可用环境时直接复用；否则在仓库根目录创建：
 
-```bash
-cd FlightTicketMCP
-uv venv
-uv pip install -r requirements.txt
+```sh
+uv venv .venv --python 3.11
 ```
 
-安装酒店子项目依赖：
+Windows PowerShell:
 
-```bash
-cd HotelTicketMCP
-uv venv
-uv pip install -r requirements.txt
+```powershell
+uv pip install --python .venv/Scripts/python.exe -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
-或使用 `pip install -r requirements.txt` / `pip install -e .`。
+macOS / Linux:
+
+```sh
+uv pip install --python .venv/bin/python -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
+```
 
 从模板生成 `.env`，填写密钥，然后：
 
@@ -58,7 +58,7 @@ cp .env.example .env
 
 ```bash
 npm run build
-node build/index.js
+node scripts/mcp-test.mjs config
 ```
 
 ## 环境变量
@@ -67,14 +67,14 @@ node build/index.js
 |------|------|
 | `AMAP_MAPS_API_KEY` | 于 [高德 MCP Server](https://lbs.amap.com/api/mcp-server/summary) 处申请 Key，用于 `map/amap` |
 | `DIDI_MCP_KEY` | 于 [滴滴 MCP](https://mcp.didichuxing.com/) 处申请 Key，用于 `taxi/didi`（地点搜索 + 费用预估） |
-| `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（默认 `python`；使用 uv 环境时指向 `.venv/Scripts/python.exe`） |
+| `FLIGHT_MCP_PYTHON_COMMAND` | 运行 FlightTicketMCP 的 Python（自动校验根 `.venv`，然后子项目 `.venv`；可显式指定解释器） |
 | `TRAIN_12306_ENTRY` | 可选，12306 MCP 入口脚本路径 |
 | `FLIGHT_MCP_PROJECT_ROOT` | 可选，`FlightTicketMCP` 根目录 |
 | `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：`edge`（默认）/ `chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `FLIGHT_MCP_BROWSER`） |
 | `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程拦截） |
 | `HOTEL_MCP_PROJECT_ROOT` | 可选，`HotelTicketMCP` 根目录 |
-| `HOTEL_MCP_PYTHON_COMMAND` | 运行 HotelTicketMCP 的 Python（默认 `python`；使用 uv 环境时指向 `.venv/Scripts/python.exe`） |
+| `HOTEL_MCP_PYTHON_COMMAND` | 运行 HotelTicketMCP 的 Python（自动校验根 `.venv`，然后子项目 `.venv`；可显式指定解释器） |
 | `HOTEL_MCP_BROWSER` | 酒店抓取浏览器内核：`edge`（默认）/ `chrome`（与航班一致） |
 | `HOTEL_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `HOTEL_MCP_BROWSER`） |
 | `HOTEL_MCP_CONSENT` | ⚠ 酒店搜索风险同意开关：`yes` 才启用酒店工具（见下文「酒店搜索风险告知」） |
@@ -83,7 +83,7 @@ node build/index.js
 
 航班相关补充变量见 `FlightTicketMCP/.env.example`。
 
-> **Windows 路径注意**：子进程以 `FLIGHT_MCP_PROJECT_ROOT` / `HOTEL_MCP_PROJECT_ROOT` 为工作目录，相对路径会按子进程 cwd 解析；请为 `FLIGHT_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH`、`HOTEL_MCP_BROWSER_PATH` 使用绝对路径。
+> **路径与配置**：相对项目目录/火车入口以仓库为基准，解释器/浏览器路径以对应 provider 目录为基准。推荐绝对路径。网关从宿主进程环境读取配置；测试脚本读取根 `.env`。Windows 解释器为 `.venv/Scripts/python.exe`，macOS/Linux 为 `.venv/bin/python`。
 
 ### 浏览器依赖
 
@@ -96,7 +96,7 @@ node build/index.js
 
 **酒店查询（hotels.ctrip.com）同样需要本机安装 Chrome 或 Edge**（内核选择 `HOTEL_MCP_BROWSER`，默认与航班一致），且**需要携程登录态**（游客会被重定向到登录页）：
 
-- 登录态由登录工具 `hotel_ctrip_login`（打开可见窗口手动登录）建立并保存到 gitignored 的 cookie 文件，后续搜索自动复用；**每次搜索/登录使用独立的浏览器会话（用完即关）**，登录态由 cookie 文件注入恢复；注入仍失败则返回 `LOGIN_REQUIRED` 并停止，等待用户登录后再继续会话。
+- 登录态由 `hotel_ctrip_login` 建立：先通过客户端原生问题提醒用户，选择打开后直接进入携程登录页；自动验证后保存 cookie，原查询重试一次。支持 MCP elicitation，也提供 AskUserQuestion/原生用户输入工具适配约定。**每次搜索/登录用完关闭浏览器**，后续查询自动复用 cookie。见[酒店登录交互](docs/hotel-login.md)。
 
 ### 酒店搜索风险告知（重要）
 
@@ -111,6 +111,19 @@ node build/index.js
 - 火车（train）：支持**直达**与**中转/联程**（`train_12306_get_interline_tickets`，12306 中转接口路径已随上游改版修复）；
 - 航班（flight）：**仅支持直达**，`flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`（航班中转）抓取链路不稳定，网关已隐藏该工具；
 - 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`hotel_ctrip_login` 用于建立登录态。详见上文「酒店搜索风险告知」。
+
+### 安装后真实查询验收
+
+三个平台均运行以下两个实例。默认按上海时区查询七天后的上海→北京航班，以及七天后入住、九天后退房的武汉酒店：
+
+```sh
+node scripts/mcp-test.mjs flight
+node scripts/mcp-test.mjs hotel
+```
+
+可选日期为 `flight YYYY-MM-DD` 或 `hotel 入住日期 退房日期`。脚本校验非空业务记录、日期和数量；空结果、登录要求和网页拦截均不会通过。`npm run check` 的航班/酒店检查仅表示连接性。
+
+浏览器依次检查显式路径、首选浏览器登记信息/指定命令 `shutil.which()`/常见位置、另一浏览器；最后允许 DrissionPage 自行发现并尝试一次。程序不遍历完整 PATH，最后失败会提示提供路径。酒店退出恢复适配三个平台并保留登录资料。详见[运行指南](docs/browser-runtime.md)。macOS/Linux 模拟测试仅验证平台分支，实机验收需对应环境。
 
 ## MCP 客户端配置示例
 
@@ -127,8 +140,6 @@ node build/index.js
       "env": {
         "AMAP_MAPS_API_KEY": "YOUR_AMAP_MAPS_API_KEY",
         "DIDI_MCP_KEY": "YOUR_DIDI_MCP_KEY",
-        "FLIGHT_MCP_PYTHON_COMMAND": "python",
-        "HOTEL_MCP_PYTHON_COMMAND": "python",
         "HOTEL_MCP_CONSENT": "yes",
         "TRAIN_12306_ENTRY": "./12306-mcp/build/index.js",
         "FLIGHT_MCP_PROJECT_ROOT": "./FlightTicketMCP",

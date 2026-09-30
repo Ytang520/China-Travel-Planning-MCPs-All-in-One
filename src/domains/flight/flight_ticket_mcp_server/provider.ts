@@ -5,6 +5,13 @@ export const createFlightTicketProvider = (
   config: RuntimeConfig,
 ): DownstreamProviderDefinition => {
   return {
+    python: {
+      workspaceRoot: config.workspaceRoot,
+      projectRoot: config.flightProjectRoot,
+      explicitCommand: config.inheritedEnv.FLIGHT_MCP_PYTHON_COMMAND,
+      variable: "FLIGHT_MCP_PYTHON_COMMAND",
+      modules: ["fastmcp", "pydantic", "requests", "dateutil", "pytz", "uvicorn", "fastapi", "DrissionPage", "psutil", "selenium", "geopy"],
+    },
     domain: "flight",
     providerName: "flight_ticket_mcp_server",
     displayName: "Flight Ticket MCP Server",

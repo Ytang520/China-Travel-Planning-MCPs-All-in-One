@@ -55,50 +55,24 @@ uv --version
 npm install
 ```
 
-## 3. 安装航班子项目依赖
+## 3. 安装航班和酒店 Python 依赖
 
-建议与上文「Python 依赖安装方式」一致：**优先使用 uv**；仅在用户明确要求时使用 pip。
+两个 Python provider 使用仓库根目录 `.venv`，Python 需 3.11+。已有可用环境时直接复用；否则在仓库根目录创建：
 
-```bash
-cd FlightTicketMCP
-uv venv
-uv pip install -r requirements.txt
-cd ..
+```sh
+uv venv .venv --python 3.11
 ```
 
-如果没有 `uv`，使用 `pip`：
+Windows PowerShell:
 
-```bash
-cd FlightTicketMCP
-pip install -r requirements.txt
-cd ..
+```powershell
+uv pip install --python .venv/Scripts/python.exe -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
-也可以按用户环境使用：
+macOS / Linux:
 
-```bash
-cd FlightTicketMCP
-pip install -e .
-cd ..
-```
-
-## 3.6 安装酒店子项目依赖
-
-与航班子项目一致：**优先使用 uv**，仅在用户明确要求时使用 pip。
-
-```bash
-cd HotelTicketMCP
-uv venv
-uv pip install -r requirements.txt
-cd ..
-```
-
-如果没有 `uv`，使用 `pip`：
-
-```bash
-cd HotelTicketMCP
-pip install -r requirements.txt
-cd ..
+```sh
+uv pip install --python .venv/bin/python -e "./FlightTicketMCP[dev]" -e "./HotelTicketMCP[dev]"
 ```
 
 ## 3.5 安装并构建 12306-mcp 子项目
@@ -177,7 +151,7 @@ question: "是否启用携程酒店搜索（hotel 域）？⚠ 该功能通过�
 选项:
   - "启用，我自愿承担风险" → 写入 HOTEL_MCP_CONSENT=yes
   - "不启用" → 不写入 HOTEL_MCP_CONSENT（或写入 no），酒店工具调用时返回 CONSENT_REQUIRED 错误
-说明: 两次酒店搜索之间会自动等待随机 30s~5min 以降低风险；酒店需要登录态，搜索返回 LOGIN_REQUIRED 时应调用 hotel_ctrip_login 让用户登录。
+说明: 两次酒店搜索之间会自动等待随机 30s~5min；搜索返回 LOGIN_REQUIRED 时调用 hotel_ctrip_login，先通过 MCP 原生提问让用户选择是否打开登录页。若返回 USER_INTERACTION_REQUIRED，必须调用 AskUserQuestion 或宿主的原生提问工具，并等待实际回答后传入 user_action。详见 [酒店登录交互](hotel-login.md)。
 ```
 
 ### 4.2 生成 .env 文件
@@ -207,15 +181,15 @@ DIDI_MCP_KEY=用户提供的滴滴Key
 # Optional overrides
 TRAIN_12306_ENTRY=./12306-mcp/build/index.js
 FLIGHT_MCP_PROJECT_ROOT=./FlightTicketMCP
-FLIGHT_MCP_PYTHON_COMMAND=python
+# FLIGHT_MCP_PYTHON_COMMAND=/absolute/path/to/python
 # 浏览器内核：A=edge（默认）/ B=chrome（航班与酒店共用）
 FLIGHT_MCP_BROWSER=edge
 HOTEL_MCP_PROJECT_ROOT=./HotelTicketMCP
-HOTEL_MCP_PYTHON_COMMAND=python
+# HOTEL_MCP_PYTHON_COMMAND=/absolute/path/to/python
 HOTEL_MCP_BROWSER=edge
 # 自定义浏览器路径（可选，优先于 FLIGHT_MCP_BROWSER / HOTEL_MCP_BROWSER）
-# FLIGHT_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
-# HOTEL_MCP_BROWSER_PATH=C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe
+# FLIGHT_MCP_BROWSER_PATH=/absolute/path/to/msedge.exe
+# HOTEL_MCP_BROWSER_PATH=/absolute/path/to/msedge.exe
 # 无头模式（不推荐：会被携程 whaleguard 拦截）
 # FLIGHT_MCP_HEADLESS=1
 # HOTEL_MCP_HEADLESS=1
@@ -226,7 +200,7 @@ HOTEL_MCP_BROWSER=edge
 # HOTEL_MCP_MAX_DELAY=300
 ```
 
-> **Windows 路径注意**：网关注入的环境变量中，相对路径会按**子进程的工作目录**解析（例如 `FLIGHT_MCP_PYTHON_COMMAND` 相对路径会拼接到 `FLIGHT_MCP_PROJECT_ROOT` 下）。为确保任何启动方式都可用，请为 `FLIGHT_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PYTHON_COMMAND`、`TRAIN_12306_ENTRY`、`FLIGHT_MCP_BROWSER_PATH`、`HOTEL_MCP_BROWSER_PATH` 使用**绝对路径**（示例：`C:/Users/xxx/.../HotelTicketMCP/.venv/Scripts/python.exe`）。
+> 项目目录/火车入口相对仓库解析，解释器路径相对 provider 目录解析。Windows 使用 `.venv/Scripts/python.exe`；macOS/Linux 使用 `.venv/bin/python`。显式配置推荐绝对路径。
 
 > **安全警告**：**永远不要在回复中打印真实密钥**；不要提交 `.env` 到 git；写文件后立刻验证 `.env` 是否在 `.gitignore` 中。
 
@@ -297,7 +271,7 @@ node build/index.js
 4. 高德、滴滴的 Key 问题参考 `.opencode/skills/error-processing/mcp-error-references.json`。
 5. 航班查询失败时优先调用 `gateway_get_config` 查看 provider 连接状态与浏览器策略（引擎、无头标志、浏览器路径覆盖）；浏览器相关错误常见原因：未安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 选错内核、`FLIGHT_MCP_HEADLESS=1` 被携程拦截。
 6. 酒店查询返回 `CONSENT_REQUIRED`：用户未同意风险条款（`.env` 中 `HOTEL_MCP_CONSENT` 不是 `yes`），按 §4.1 D 项重新询问用户。
-7. 酒店查询返回 `LOGIN_REQUIRED`：登录态缺失且 cookie 注入失败。**停止当前测试并立即通知用户完成登录**：运行 `node scripts/mcp-test.mjs login`（调用 `hotel_ctrip_login`，会打开可见浏览器窗口），让用户手动登录（扫码或账密，默认最多等待 14 分钟，可用 `HOTEL_MCP_LOGIN_TIMEOUT` 调整）。**登录窗口会保持打开直至登录完成或超时——期间不要关闭窗口、不要中断或杀掉承载登录窗口的进程**，否则用户无法完成登录。登录成功后 cookie 自动保存，`login` 模式会复跑一次酒店搜索验证；验证通过后无需再次登录（后续搜索自动注入复用）。
+7. 酒店查询返回 `LOGIN_REQUIRED`：调用 `hotel_ctrip_login`，先由原生 MCP 提问让用户选择打开登录页或取消。若返回 `USER_INTERACTION_REQUIRED`，Agent 必须使用 AskUserQuestion 或宿主原生提问工具，等待实际回答后传入 `user_action=open_login` 或 `cancel`。选择打开后直接显示携程登录页；扫码或账号输入均在浏览器中完成，默认等待 14 分钟（`HOTEL_MCP_LOGIN_TIMEOUT`：1–840 秒）。成功后原参数重试查询一次；取消、关闭窗口或失败则停止。交互终端可运行 `node scripts/mcp-test.mjs login`；无交互终端仅在用户已经选择打开后才能使用 `--login-action=open_login`。详见 [酒店登录交互](hotel-login.md)。
 8. 不要输出完整环境变量、token、真实密钥或私人账号数据。
 
 ## 8. 部署后功能测试
@@ -339,13 +313,13 @@ node scripts/mcp-test.mjs taxi
 
 ### 8.3 测试航班查询（flight 域）
 
-查询当天从 **上海** 到 **北京** 的航班：
+查询上海时区当前日期七天后从 **上海** 到 **北京** 的航班：
 
 - 工具：`flight_flight_ticket_mcp_server_searchFlightRoutes`
-- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 当天日期，`data_source_preference` = "default"（可选 `auto`；不存在 `format` 参数）；可选时间过滤：`earliestStartTime` / `latestStartTime`（0-23）/ `earliestArrivalTime` / `latestArrivalTime`
+- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 上海时区当前日期 +7 天，`data_source_preference` = "default"（可选 `auto`；不存在 `format` 参数）；可选时间过滤：`earliestStartTime` / `latestStartTime`（0-23）/ `earliestArrivalTime` / `latestArrivalTime`
 - 返回：JSON 文本，含 `status`、`flight_count`、`flights`、`formatted_output` 等字段
 
-预期：返回航班列表（需 1–8 分钟；期间会短暂出现一个**最小化浏览器窗口**（任务栏可见），不抢前台）。若失败，检查：本机是否安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 内核选择、`FLIGHT_MCP_HEADLESS` 是否为 1（会被携程拦截）、`FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。注意：网关**不提供**航班中转工具。
+预期：返回航班列表（需 1–8 分钟；期间会短暂出现一个**最小化浏览器窗口**（任务栏可见），不抢前台）。若失败，检查：本机是否安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 内核选择、`FLIGHT_MCP_HEADLESS` 是否为 1（会被携程拦截）、`root .venv or FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。注意：网关**不提供**航班中转工具。
 
 ### 8.4 测试酒店查询（hotel 域）
 
@@ -354,7 +328,7 @@ node scripts/mcp-test.mjs taxi
 - 工具：`hotel_ctrip_searchHotels`
 - 参数：`city` = "武汉"，`checkin`/`checkout` = 今天+7/+9 天，`limit` = 5
 
-预期：返回酒店列表（含 `status: success`、`count` 与 `hotels[]`；需约 1–2 分钟，期间出现最小化浏览器窗口）。若返回 `CONSENT_REQUIRED`：检查 `.env` 的 `HOTEL_MCP_CONSENT=yes` 与用户同意流程；若返回 `LOGIN_REQUIRED`：**停止测试并通知用户登录**——运行 `node scripts/mcp-test.mjs login`，会打开可见浏览器窗口等待用户手动登录（默认最多 14 分钟），期间**不要关闭窗口或中断进程**；登录成功后该模式会自动复跑一次酒店搜索验证（登录态会保存复用）。注意：酒店搜索间有随机 30s~5min 间隔，连续两次测试第二次会等待。
+预期：返回酒店列表（`status: success`、`count` 与 `hotels[]`；约 1–2 分钟）。`CONSENT_REQUIRED` 需检查已有的风险同意设置；缺少登录态时 `hotel` 模式请求登录交互，无交互终端返回 `USER_INTERACTION_REQUIRED` 后，Agent 必须先调用宿主提问工具并等待回答。用户选择打开后直接显示登录页，成功后以原参数恢复查询一次。`LOGIN_STATE_UNKNOWN` 表示页面加载或拦截状态不明，不能直接当作登录过期。连续搜索有随机 30s~5min 间隔。
 
 ### 8.5 测试地图工具（map 域）
 
@@ -388,3 +362,5 @@ node scripts/mcp-test.mjs taxi
 ```
 
 若所有域均通过，安装成功。若任一域失败，参考 §7 排障。
+
+浏览器验收须运行 `node scripts/mcp-test.mjs flight` 和 `node scripts/mcp-test.mjs hotel`。两个实例跨平台校验非空业务结果；连接成功不等于查询通过。环境与发现顺序、退出恢复及模拟测试限制见[运行指南](browser-runtime.md)。

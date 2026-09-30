@@ -94,57 +94,13 @@ Flight Ticket MCP Server 实现了供航空机票相关查询操作的工具和�
 
 ## 安装
 
-### 前置要求
-- Python 3.11 或更高版本
-- pip 包管理器（或 uvx 工具）
+### 前置要求与项目环境
 
-### 方式一：从PyPI安装（推荐）
+Python 需 3.11+。统一网关安装与跨平台解释器路径、浏览器发现和验收命令见[运行指南](../docs/browser-runtime.md)。
 
-```bash
-# 使用pip安装
-pip install flight-ticket-mcp-server
+独立安装时，在本项目目录通过 `uv venv .venv --python 3.11` 创建环境，再运行 `uv pip install --python <解释器路径> -e ".[dev]"`。Windows 使用 `.venv/Scripts/python.exe`，macOS/Linux 使用 `.venv/bin/python`。
 
-# 或使用uvx直接从本地源码运行（无需安装到系统环境）
-uvx --from . flight-ticket-mcp-server
-```
-
-### 方式二：本地开发安装
-```bash
-# 克隆或下载项目
-cd FlightTicketMCP
-
-# 安装依赖
-pip install -r requirements.txt
-
-# 或从本地源码安装
-pip install -e .
-```
-
-### uvx 使用说明
-
-uvx 是一个现代的Python包运行工具，可以在临时环境中直接运行本地项目或PyPI包，而无需安装到系统环境：
-
-```bash
-# 安装uv（包含uvx工具）
-pip install uv
-
-# 直接从本地源码运行MCP服务器（无需安装）
-uvx --from . flight-ticket-mcp-server
-
-# 在stdio模式下运行（适合MCP客户端）
-set MCP_TRANSPORT=stdio
-uvx --from . flight-ticket-mcp-server
-
-# 在SSE模式下运行
-set MCP_TRANSPORT=sse
-uvx --from . flight-ticket-mcp-server
-```
-
-**uvx 的优势：**
-- 🚀 无需污染全局Python环境
-- 📦 自动管理虚拟环境
-- 🔄 支持直接运行最新版本
-- 🛡️ 隔离依赖，避免冲突
+启动 stdio 服务：`uv run --no-project --python <解释器路径> python -m flight_ticket_mcp_server`。依赖安装在项目环境中。
 
 ## 启动方式
 
@@ -299,7 +255,7 @@ Starting SSE transport on 127.0.0.1:8000/sse
   "mcpServers": {
     "flight-ticket-server": {
       "command": "uvx",
-      "args": ["--from", "D:\\FlightTicketMCP", "flight-ticket-mcp-server"],
+      "args": ["--from", "<path-to-FlightTicketMCP>", "flight-ticket-mcp-server"],
       "env": {
         "MCP_TRANSPORT": "stdio"
       }
@@ -337,7 +293,7 @@ Starting SSE transport on 127.0.0.1:8000/sse
   "mcpServers": {
     "flight-ticket-server": {
       "command": "uvx",
-      "args": ["--from", "D:\\FlightTicketMCP", "flight-ticket-mcp-server"],
+      "args": ["--from", "<path-to-FlightTicketMCP>", "flight-ticket-mcp-server"],
       "env": {
         "MCP_TRANSPORT": "stdio"
       }
@@ -367,7 +323,7 @@ Starting SSE transport on 127.0.0.1:8000/sse
   "mcpServers": {
     "flight-ticket-server": {
       "command": "python",
-      "args": ["D:\\FlightTicketMCPServer\\flight_ticket_server.py"],
+      "args": ["<path-to-flight-ticket-server>/flight_ticket_server.py"],
       "env": {
         "MCP_TRANSPORT": "sse",
         "MCP_HOST": "127.0.0.1",
@@ -385,7 +341,7 @@ Starting SSE transport on 127.0.0.1:8000/sse
   "mcpServers": {
     "flight-ticket-server": {
       "command": "uvx",
-      "args": ["--from", "D:\\FlightTicketMCP", "flight-ticket-mcp-server"],
+      "args": ["--from", "<path-to-FlightTicketMCP>", "flight-ticket-mcp-server"],
       "env": {
         "MCP_TRANSPORT": "stdio"
       }
@@ -400,7 +356,7 @@ Starting SSE transport on 127.0.0.1:8000/sse
   "mcpServers": {
     "flight-ticket-server": {
       "command": "uvx",
-      "args": ["--from", "D:\\FlightTicketMCP", "flight-ticket-mcp-server"],
+      "args": ["--from", "<path-to-FlightTicketMCP>", "flight-ticket-mcp-server"],
       "env": {
         "MCP_TRANSPORT": "streamable-http",
         "MCP_HOST": "127.0.0.1",

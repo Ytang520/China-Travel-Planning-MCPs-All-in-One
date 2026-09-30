@@ -17,11 +17,18 @@ def test_login_and_register_buttons_is_guest():
 
 
 def test_no_guest_markers_is_logged_in():
-    assert detect_login_state("https://hotels.ctrip.com/hotels/list/...", MEMBER_HEADER) == "logged_in"
+    assert detect_login_state("https://hotels.ctrip.com/hotels/list/...", MEMBER_HEADER, has_hotel_list=True) == "logged_in"
     # 会员身份任意，不依赖"黄金贵宾"文本
     assert detect_login_state("https://hotels.ctrip.com/hotels/list/...", GOLD_VIP_HEADER) == "logged_in"
 
 
-def test_empty_inputs_are_logged_in():
-    # 无 passport、无登录/注册标记 → 按设计视为已登录
-    assert detect_login_state("https://hotels.ctrip.com/hotels/list/...", "") == "logged_in"
+def test_empty_inputs_are_unknown():
+    assert detect_login_state("https://hotels.ctrip.com/hotels/list/...", "") == "unknown"
+
+
+def test_only_positive_evidence_on_the_official_hotel_origin_passes():
+    for url in ("about:blank", "https://hotels.ctrip.com.evil.test/hotels/", "https://other.test/"):
+        assert detect_login_state(url, GOLD_VIP_HEADER, has_hotel_list=True) == "unknown"
+    assert detect_login_state("https://hotels.ctrip.com/hotels/", MEMBER_HEADER) == "unknown"
+    assert detect_login_state("https://hotels.ctrip.com/hotels/", MEMBER_HEADER, ready=False, has_hotel_list=True) == "unknown"
+    assert detect_login_state("https://hotels.ctrip.com/hotels/", "安全验证", has_hotel_list=True) == "unknown"

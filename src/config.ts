@@ -51,16 +51,15 @@ export const getRuntimeConfig = (): RuntimeConfig => {
     projectVersion: readProjectVersion(workspaceRoot),
     inheritedEnv: normalizeEnv(process.env),
     train12306Entry:
-      process.env.TRAIN_12306_ENTRY ??
-      resolve(workspaceRoot, "12306-mcp", "build", "index.js"),
+      resolve(workspaceRoot, process.env.TRAIN_12306_ENTRY || "12306-mcp/build/index.js"),
     flightProjectRoot:
-      process.env.FLIGHT_MCP_PROJECT_ROOT ??
-      resolve(workspaceRoot, "FlightTicketMCP"),
-    flightPythonCommand: process.env.FLIGHT_MCP_PYTHON_COMMAND ?? "python",
+      resolve(workspaceRoot, process.env.FLIGHT_MCP_PROJECT_ROOT || "FlightTicketMCP"),
+    flightPythonCommand: process.env.FLIGHT_MCP_PYTHON_COMMAND?.trim() ||
+      resolve(workspaceRoot, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"),
     hotelProjectRoot:
-      process.env.HOTEL_MCP_PROJECT_ROOT ??
-      resolve(workspaceRoot, "HotelTicketMCP"),
-    hotelPythonCommand: process.env.HOTEL_MCP_PYTHON_COMMAND ?? "python",
+      resolve(workspaceRoot, process.env.HOTEL_MCP_PROJECT_ROOT || "HotelTicketMCP"),
+    hotelPythonCommand: process.env.HOTEL_MCP_PYTHON_COMMAND?.trim() ||
+      resolve(workspaceRoot, ".venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python"),
     amapApiKey: process.env.AMAP_MAPS_API_KEY,
     didiMcpKey: process.env.DIDI_MCP_KEY,
   };

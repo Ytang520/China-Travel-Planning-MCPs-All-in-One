@@ -6,6 +6,10 @@ build/
 .mcp.json
 log.txt
 .venv/
+.uv-cache/
+.npm-cache/
+.validation/
+HotelTicketMCP/*.egg-info/
 .DS_Store
 Thumbs.db
 .idea/
@@ -45,6 +49,7 @@ HotelTicketMCP/ctrip-hotel-cookies.json
 HotelTicketMCP/logs/
 HotelTicketMCP/.pytest-tmp/
 .pytest_cache/
+.pytest-tmp/
 
 # Ctrip cookie captures / scraping artifacts (personal login data, never commit)
 ctrip-cookies.json
