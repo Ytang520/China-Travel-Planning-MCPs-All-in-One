@@ -5,6 +5,7 @@ STATE_JS = """
 const visible = e => !!e && !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
 const text = (document.body?.innerText || '').slice(0, 1200);
 return {
+  url: window.location.href,
   ready: document.readyState !== 'loading' && !!document.body && !!text.trim(),
   text,
   login_form: [...document.querySelectorAll('input[type="password"]')].some(visible)
@@ -37,12 +38,24 @@ def detect_login_state(url, header_text, *, ready=True, has_hotel_list=False, lo
     return "unknown"
 
 
-def observe(page):
+class LoginObservationError(RuntimeError):
+    """The detector did not produce a usable snapshot, not a closed browser."""
+
+
+def observe(page, *, timeout=5):
     """Inspect only page state; callers never need to log account text."""
-    data = page.run_js(STATE_JS)
+    # A single by-value CDP response avoids stale JS object handles across
+    # navigation. page.url/run_js can otherwise wait for document loading or
+    # issue additional, independently timed CDP calls while the page changes.
+    result = page.run_cdp("Runtime.evaluate", expression="(() => {" + STATE_JS + "})()",
+                          returnByValue=True, _timeout=timeout)
+    if not isinstance(result, dict) or "exceptionDetails" in result:
+        raise LoginObservationError("Login state script did not complete")
+    remote_result = result.get("result")
+    data = remote_result.get("value") if isinstance(remote_result, dict) else None
     if not isinstance(data, dict):
-        data = {}
-    url = page.url or ""
+        raise LoginObservationError("Login state snapshot is unavailable")
+    url = data.get("url") or ""
     return {
         "url": url,
         "ready": bool(data.get("ready")),

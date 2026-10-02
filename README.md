@@ -21,7 +21,7 @@
 
 ```text
 Install and configure Travel MCP Gateway in this folder by following the instructions here:
-https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.zh.md
+https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.zh.md. Note that first download this file inside this folder, then read it.
 ```
 
 也可以直接阅读 [Agent 安装指南](docs/agent-install.zh.md)。

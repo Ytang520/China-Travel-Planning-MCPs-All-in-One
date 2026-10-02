@@ -1,6 +1,6 @@
 # Agent 安装指南
 
-本文写给 LLM Agent。目标是在本地完成 Travel MCP Gateway 的依赖安装、环境配置、构建验证，并给用户生成可复制到 MCP 客户端的配置。
+本文写给 LLM Agent。目标是在本地 (该文件夹中) 完成 Travel MCP Gateway 的依赖安装、环境配置、构建验证，并给用户生成可复制到 MCP 客户端的配置。
 
 ## Steps:
 ### 1. 检查运行环境

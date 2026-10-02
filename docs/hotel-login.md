@@ -34,6 +34,11 @@ node scripts/mcp-test.mjs login --login-action=cancel
 - `HOTEL_MCP_LOGIN_TIMEOUT` 控制页面就绪后的等待秒数，默认及最大值 840 秒。登录流程受总预算约束，网关下游调用上限 960 秒；宿主的登录工具超时建议至少 1110 秒，以容纳提问、页面启动和清理。
 - 进度通知报告打开页面、等待登录、验证和完成。客户端取消会通知登录工作线程并清理其浏览器。
 - `LOGIN_STATE_UNKNOWN` 表示当前页面无法可靠判断登录态，应检查页面或稍后重试，不应自动触发重新登录。
+- 登录跳转期间的页面读取异常会触发最长 20 秒的恢复等待，并受原登录总超时约束。页面读取和连接探测分别限制为最多 3 秒和 2 秒；取消请求会中止恢复。
+- `LOGIN_BROWSER_CLOSED` 需要浏览器进程退出或连续两次确认原标签页消失的证据。进程身份使用 PID 与创建时间共同校验；有关联后续标签页时保留未知状态。`LOGIN_CONNECTION_LOST` 表示控制连接中断，不能据此认定浏览器已退出。
+- 日志用 `hotel_login id=...` 关联一次请求，记录阶段、异常类型、连接探测结果、恢复次数、保存完成及最终 `close_reason`。客户端取消与异步通知失败分别记录为 `client_cancelled`、`async_failure`；日志不包含账号文本、完整 URL、cookie 值或原始浏览器异常内容。
+
+浏览器回归测试使用独立临时 profile 和模拟 cookie。设置 `HOTEL_MCP_RUN_EDGE_TESTS=1` 后运行 `HotelTicketMCP/tests/test_login_edge.py` 可验证真实 Edge 的上下文失效、关闭标签页和连接中断；页面响应由本地 CDP 拦截提供，不执行真实账号登录。
 
 ## English client contract
 
