@@ -49,6 +49,11 @@ def _resolve_browser_path() -> Optional[str]:
     return BrowserDiscovery(PROJECT_ROOT).resolve("FLIGHT_MCP").path
 
 
+def _validate_limit(limit: Optional[int]) -> None:
+    if limit is not None and (type(limit) is not int or limit < 1):
+        raise ValueError("limit must be a positive integer or None")
+
+
 class FlightRouteSearcher:
     """航班路线查询器"""
 
@@ -79,6 +84,7 @@ class FlightRouteSearcher:
         logger.info("航班路线查询器初始化完成")
         self.last_parse_status = "not_started"
         self.last_parse_error = None
+        self.last_collection_stop_reason = "not_started"
         self._earliestStartTime = None
         self._latestStartTime = None
         self._earliestArrivalTime = None
@@ -93,6 +99,7 @@ class FlightRouteSearcher:
         latestStartTime: Optional[int] = None,
         earliestArrivalTime: Optional[int] = None,
         latestArrivalTime: Optional[int] = None,
+        limit: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         搜索航班
@@ -105,10 +112,12 @@ class FlightRouteSearcher:
             latestStartTime: 最晚出发小时 (1-24), None表示无限制
             earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
             latestArrivalTime: 最晚到达小时 (1-24), None表示无限制
+            limit: 最多采集的有效航班数，None表示不设置数量上限
 
         Returns:
             航班信息列表
         """
+        _validate_limit(limit)
         # Store time filter params as instance attributes for filter methods
         self._earliestStartTime = earliestStartTime
         self._latestStartTime = latestStartTime
@@ -176,7 +185,7 @@ class FlightRouteSearcher:
                 logger.info("时间筛选已应用，继续滚动加载筛选后的航班...")
 
             # 在滚动过程中分段采集航班，避免回到顶部后只解析到一部分虚拟列表
-            flights = self._collect_flights_with_scrolling()
+            flights = self._collect_flights_with_scrolling(limit=limit)
 
             logger.info(f"搜索完成，找到 {len(flights)} 条航班信息")
             return flights
@@ -408,10 +417,12 @@ class FlightRouteSearcher:
             except:
                 continue
 
-    def _collect_flights_with_scrolling(self) -> List[Dict[str, Any]]:
+    def _collect_flights_with_scrolling(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """在滚动过程中采集航班，兼容分段渲染/虚拟列表"""
+        _validate_limit(limit)
         collected_flights: List[Dict[str, Any]] = []
         seen_flight_keys = set()
+        self.last_collection_stop_reason = "scroll_limit"
 
         max_scroll_rounds = 100
         max_stable_rounds = 8
@@ -429,7 +440,7 @@ class FlightRouteSearcher:
             scroll_distance = 300
 
         initial_added = self._collect_visible_flights(
-            collected_flights, seen_flight_keys
+            collected_flights, seen_flight_keys, limit=limit
         )
         logger.info(
             "开始滚动采集航班，初始页面高度: %s，视口高度: %s，初始新增航班: %s",
@@ -440,6 +451,9 @@ class FlightRouteSearcher:
 
         last_scroll_height = initial_metrics["scroll_height"]
         for round_index in range(1, max_scroll_rounds + 1):
+            if limit is not None and len(collected_flights) >= limit:
+                self.last_collection_stop_reason = "limit_reached"
+                break
             try:
                 self.page.run_js(f"window.scrollBy(0, {scroll_distance});")
                 logger.info("第%s次向下滚动 %spx", round_index, scroll_distance)
@@ -449,8 +463,11 @@ class FlightRouteSearcher:
 
                 current_metrics = self._get_scroll_metrics()
                 new_flights = self._collect_visible_flights(
-                    collected_flights, seen_flight_keys
+                    collected_flights, seen_flight_keys, limit=limit
                 )
+                if limit is not None and len(collected_flights) >= limit:
+                    self.last_collection_stop_reason = "limit_reached"
+                    break
                 height_grew = current_metrics["scroll_height"] > last_scroll_height
                 reached_bottom = current_metrics["bottom_gap"] <= 120
 
@@ -471,31 +488,56 @@ class FlightRouteSearcher:
                 last_scroll_height = current_metrics["scroll_height"]
 
                 if reached_bottom and stable_rounds >= max_stable_rounds:
+                    self.last_collection_stop_reason = "list_stable"
                     logger.info(
                         "已到达页面底部，且连续%s轮无新增内容，停止采集",
                         stable_rounds,
                     )
                     break
             except Exception as e:
+                self.last_collection_stop_reason = "scroll_error"
                 logger.warning("第%s次滚动采集失败: %s", round_index, e)
                 break
 
         if collected_flights:
             self.last_parse_status = "success"
             self.last_parse_error = None
-            logger.info("滚动采集完成，共收集 %s 条唯一航班", len(collected_flights))
+            logger.info("滚动采集完成: requested_limit=%s, returned_count=%s, stop_reason=%s",
+                        limit, len(collected_flights), self.last_collection_stop_reason)
             return collected_flights
 
         logger.info("滚动采集未获得有效航班，回退到当前视口直接解析")
-        return self._parse_flights()
+        flights = self._parse_flights(limit=limit)
+        self.last_collection_stop_reason = (
+            "limit_reached" if limit is not None and len(flights) >= limit else "fallback_parse"
+        )
+        logger.info("兜底采集完成: requested_limit=%s, returned_count=%s, stop_reason=%s",
+                    limit, len(flights), self.last_collection_stop_reason)
+        return flights
 
     def _collect_visible_flights(
-        self, collected_flights: List[Dict[str, Any]], seen_flight_keys: set
+        self, collected_flights: List[Dict[str, Any]], seen_flight_keys: set,
+        limit: Optional[int] = None,
     ) -> int:
         """采集当前视口内可见航班并去重"""
-        visible_flights = self._snapshot_visible_flights()
+        return self._append_flights(
+            self._snapshot_visible_flights(), collected_flights, seen_flight_keys, limit
+        )
+
+    def _append_flights(
+        self, visible_flights: List[Dict[str, Any]], collected_flights: List[Dict[str, Any]],
+        seen_flight_keys: set, limit: Optional[int] = None,
+    ) -> int:
+        # Filter before counting a bounded sample so rejected rows do not consume the limit.
+        if limit is not None:
+            visible_flights, _ = self._client_side_time_filter(
+                visible_flights, self._earliestStartTime, self._latestStartTime,
+                self._earliestArrivalTime, self._latestArrivalTime,
+            )
         new_flight_count = 0
         for flight_info in visible_flights:
+            if limit is not None and len(collected_flights) >= limit:
+                break
             try:
                 if (
                     not flight_info
@@ -503,6 +545,15 @@ class FlightRouteSearcher:
                     or flight_info.get("航班号") == "未知"
                 ):
                     continue
+
+                if limit is not None:
+                    time_pattern = r"(?:[01]\d|2[0-3]):[0-5]\d(?:\s*\+\d+天)?"
+                    if not (
+                        re.fullmatch(r"[A-Z0-9]{2}\s*\d{2,5}", str(flight_info["航班号"]), re.I)
+                        and re.fullmatch(time_pattern, str(flight_info.get("出发时间", "")))
+                        and re.fullmatch(time_pattern, str(flight_info.get("到达时间", "")))
+                    ):
+                        continue
 
                 flight_key = self._build_flight_key(flight_info)
                 if flight_key in seen_flight_keys:
@@ -600,8 +651,9 @@ class FlightRouteSearcher:
             ]
         )
 
-    def _parse_flights(self) -> List[Dict[str, Any]]:
+    def _parse_flights(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """解析航班信息"""
+        _validate_limit(limit)
         flights = []
 
         try:
@@ -613,32 +665,7 @@ class FlightRouteSearcher:
                 return []
 
             logger.info(f"找到 {len(flight_containers)} 个航班容器")
-            seen_flight_keys = set()
-
-            for flight_info in flight_containers:
-                try:
-                    if (
-                        flight_info
-                        and flight_info.get("航班号")
-                        and flight_info.get("航班号") != "未知"
-                    ):
-                        flight_key = self._build_flight_key(flight_info)
-                        if flight_key in seen_flight_keys:
-                            continue
-
-                        # 只有当航班号存在且不是'未知'时才添加
-                        flight_info["序号"] = len(flights) + 1
-                        flights.append(flight_info)
-                        seen_flight_keys.add(flight_key)
-                        logger.debug(
-                            f"成功解析航班 {len(flights)}: {flight_info.get('航班号')}"
-                        )
-                    else:
-                        logger.debug("航班容器无有效航班号，跳过")
-
-                except Exception as e:
-                    logger.error(f"解析航班容器出错: {str(e)}")
-                    continue
+            self._append_flights(flight_containers, flights, set(), limit)
 
             logger.info(f"成功找到 {len(flights)} 个有航班号的航班")
             self.last_parse_status = "success" if flights else "no_results"
@@ -1008,6 +1035,7 @@ def searchFlightRoutes(
     latestStartTime: Optional[int] = None,
     earliestArrivalTime: Optional[int] = None,
     latestArrivalTime: Optional[int] = None,
+    limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     根据出发地、目的地和出发日期查询航班路线
@@ -1021,10 +1049,12 @@ def searchFlightRoutes(
         latestStartTime: 最晚出发小时 (1-24), None表示无限制
         earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
         latestArrivalTime: 最晚到达小时 (1-24), None表示无限制
+        limit: 最多返回的有效航班数，None表示不设置数量上限；统计仅覆盖返回样本
 
     Returns:
         包含航班查询结果的字典
     """
+    _validate_limit(limit)
     if earliestStartTime is not None and not (0 <= earliestStartTime <= 23):
         raise ValueError("earliestStartTime must be between 0 and 23")
     if latestStartTime is not None and not (1 <= latestStartTime <= 24):
@@ -1142,6 +1172,7 @@ def searchFlightRoutes(
                 latestStartTime=latestStartTime,
                 earliestArrivalTime=earliestArrivalTime,
                 latestArrivalTime=latestArrivalTime,
+                limit=limit,
             )
 
             # Apply time filters if any time params are provided
@@ -1190,6 +1221,9 @@ def searchFlightRoutes(
                 "departure_airport": get_city_name(departure_city),
                 "destination_airport": get_city_name(destination_city),
                 "flight_count": len(merged_flights),
+                "requested_limit": limit,
+                "collection_stop_reason": searcher.last_collection_stop_reason,
+                "statistics_scope": "returned_flights",
                 "raw_flight_count": len(flights),
                 "flights": merged_flights,
                 "formatted_output": _format_route_result(

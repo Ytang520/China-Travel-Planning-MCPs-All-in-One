@@ -20,6 +20,7 @@ import type {
 import {
   connectAndRegisterProvider,
   closeDownstreamClients,
+  ProviderInitializationCancelled,
   createInventorySchema,
   summarizeInputSchema,
 } from "./utils/downstreamClient.js";
@@ -416,6 +417,10 @@ const start = async () => {
         tools: connection.registeredTools,
       });
     } catch (error) {
+      if (error instanceof ProviderInitializationCancelled) {
+        console.error(`[gateway] provider ${provider.domain}/${provider.providerName}: ${error.message}`);
+        break;
+      }
       console.error(
         `[gateway] failed to connect provider ${provider.domain}/${provider.providerName}:`,
         error,
@@ -423,9 +428,8 @@ const start = async () => {
     }
   }
 
-  registerInventoryFeatures(inventory, connections);
-
   if (stopping) return;
+  registerInventoryFeatures(inventory, connections);
   const transport = new StdioServerTransport(gatewayInput);
   await server.connect(transport);
   console.error("[gateway] travel MCP gateway running on stdio");
@@ -434,11 +438,12 @@ const start = async () => {
 let stopping = false;
 let shutdownPromise: Promise<void> | undefined;
 const gatewayInput = new PassThrough();
-const shutdown = () => {
+const shutdown = (reason = "shutdown") => {
+  if (!stopping) console.error(`[gateway] shutting down: ${reason}`);
   stopping = true;
   shutdownPromise ??= (async () => {
     process.stdin.unpipe(gatewayInput);
-    await closeDownstreamClients();
+    await closeDownstreamClients(reason);
     await server.close();
     gatewayInput.destroy();
   })();
@@ -447,18 +452,18 @@ const shutdown = () => {
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
-    void shutdown().finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
+    void shutdown(signal).finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
   });
 }
-process.stdin.once("end", () => { void shutdown(); });
-process.stdin.once("close", () => { void shutdown(); });
-process.stdin.once("error", () => { void shutdown(); });
+process.stdin.once("end", () => { void shutdown("host stdin EOF"); });
+process.stdin.once("close", () => { void shutdown("host stdin closed"); });
+process.stdin.once("error", () => { void shutdown("host stdin error"); });
 // Consume host input immediately so EOF during provider startup is observable.
 // The transport consumes buffered initialization messages once startup finishes.
 process.stdin.pipe(gatewayInput);
 
 start().catch(async (error) => {
   console.error("[gateway] fatal startup error:", error);
-  await shutdown();
+  await shutdown("fatal startup error");
   process.exit(1);
 });

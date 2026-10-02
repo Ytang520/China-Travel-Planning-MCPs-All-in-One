@@ -18,11 +18,13 @@ For how the gateway exposes tools to the model, see **Gateway MCP Server and mod
 ├─ FlightTicketMCP/
 ├─ HotelTicketMCP/
 ├─ .opencode/
-│  ├─ opencode.json
-│  └─ skills/
-│     └─ error-processing/
-│        ├─ SKILL.md
-│        └─ mcp-error-references.json
+│  └─ opencode.json
+├─ skill-templates/
+│  └─ error-processing/
+│     ├─ SKILL.md
+│     └─ mcp-error-references.json
+├─ scripts/
+│  └─ install-agent-skill.mjs
 ├─ docs/
 │  ├─ assets/
 │  │  └─ workflow.png
@@ -63,7 +65,8 @@ Conventions:
 - `docs/agent-install.zh.md` / `docs/agent-install.md` are agent-facing installation and verification guides
 - `docs/mcp-client-examples/` hosts MCP JSON placeholders for Cursor, Claude Code, and OpenCode (see its `README.md`)
 - `.opencode/opencode.json` is the project-level OpenCode MCP configuration example
-- `.opencode/skills/error-processing/` stores the project-level error-processing skill and MCP troubleshooting reference index
+- `skill-templates/error-processing/` is the canonical source for the skill and reference index; `scripts/install-agent-skill.mjs` deploys a project copy for the selected host
+- Generated `.opencode/skills/`, `.claude/skills/`, and `.cursor/skills/` directories match the `skills/` ignore rule and are not maintained as source templates
 - Top-level domains are fixed: `train`, `flight`, `hotel`, `map`, `taxi`
 - Each child folder is one downstream MCP provider (e.g. `train/12306`, `hotel/ctrip`)
 - Each domain has a `registry.ts` that lists its providers
@@ -208,14 +211,20 @@ Use `includeTools` / `excludeTools`. `taxi/didi` keeps only `maps_textsearch` an
 
 Use these to inspect enabled providers, retained tools, browser strategy, and domain health without reading source code.
 
-## OpenCode and error-processing skill
+## Host-specific skill installation
 
 - OpenCode example config lives at `.opencode/opencode.json` and configures only the unified `travel-mcp-gateway`
 - Agent installation guides live at `docs/agent-install.zh.md` / `docs/agent-install.md` for dependency installation, environment template copying, build verification, and client configuration
-- The error-processing skill lives at `.opencode/skills/error-processing/SKILL.md`
-- MCP troubleshooting references live at `.opencode/skills/error-processing/mcp-error-references.json`
-- For MCP connection, authentication, schema, or response-format issues, the skill first semantically matches public references by `description` / `usage`; `triggers` are only optional aliases for environment variables, provider ids, tool names, and Chinese names
-- Troubleshooting must not print secrets, tokens, full environment dumps, or private account data
+- Canonical resources are [SKILL.md](../skill-templates/error-processing/SKILL.md) and [mcp-error-references.json](../skill-templates/error-processing/mcp-error-references.json); resource paths resolve relative to the skill directory
+- Reuse the installation host choice: `--agent opencode` → `.opencode/skills/error-processing/`, `--agent claude-code` → `.claude/skills/error-processing/`, `--agent cursor` → `.cursor/skills/error-processing/`
+- The default destination is the MCP repository; `--project-root` selects the actual agent working project. Unknown hosts cannot fall back automatically; verify official skills documentation for other products
+- The installer validates sources before writing, skips identical files, and preserves differing user files with a conflict result. `--check` is read-only; exit 0 means a template match, while nonzero means missing files, conflicts, or validation errors
+- Other project copies are reported because compatibility directories may cause discovery ambiguity. The script neither deletes them nor verifies host loading; see the [installation guide](agent-install.md) for native discovery checks
+- On MCP failures, the host agent uses error context and reference `description` / `usage` to select one or two public sources; `triggers` are optional aliases. This is a prompt workflow, without embeddings, a vector database, or a known-error retrieval engine
+- The agent replies with an error summary, checks, diagnosis, and next steps. It saves a document only when requested; the gateway has no automatic skill invocation
+- Users may enter keys and agents may write authorized local configuration; troubleshooting replies and logs must not echo secrets, tokens, full environment dumps, or private account data
+
+After editing the template, run `node --test tests/install-agent-skill.test.mjs` to verify host paths, cross-directory installation, repeatability, and conflict protection. Review and merge existing custom copies manually rather than forcing an update.
 
 ## Security
 

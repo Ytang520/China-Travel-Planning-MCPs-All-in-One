@@ -7,10 +7,24 @@
 | 文件 | 适用宿主 | 说明 |
 |------|----------|------|
 | [cursor.mcp.json.example](cursor.mcp.json.example) | **Cursor** | 可复制为项目内 `.cursor/mcp.json`，或与用户目录下的全局配置合并。 |
-| [claude-code.mcp.json.example](claude-code.mcp.json.example) | **Claude Code** | 可复制为仓库根目录 `.mcp.json`（project scope）；也可用 CLI 添加（见下）。 |
+| [claude-code.mcp.json.example](claude-code.mcp.json.example) | **Claude Code** | 可复制或合并为 Agent 工作项目根目录的 `.mcp.json`（project scope）；也可用 CLI 添加（见下）。 |
 | [opencode.mcp.fragment.json](opencode.mcp.fragment.json) | **OpenCode** | **仅** OpenCode：内容为 `mcp` 对象下的单个 server 条目；合并进用户的 `opencode.json` / `.opencode/opencode.json` 中的 `"mcp"` 键（勿与 `mcpServers` 混用）。 |
 
 若宿主使用 **`mcpServers` + `command` + `args` + `env`**（Cursor、Claude Code 项目 `.mcp.json`），结构与本仓库示例一致。OpenCode 使用 **`mcp.<name>.type` / `command`（数组）/ `environment`**，字段名不同。
+
+## 与 MCP 宿主对应的排障 skill
+
+MCP 连接配置和 skill 是两项配置。复用同一个宿主选择，在 MCP 仓库运行 [安装脚本](../../scripts/install-agent-skill.mjs)：
+
+| 宿主 | 命令参数 | Agent 工作项目中的 skill 目录 |
+| --- | --- | --- |
+| OpenCode | `--agent opencode` | `.opencode/skills/error-processing/` |
+| Claude Code | `--agent claude-code` | `.claude/skills/error-processing/` |
+| Cursor | `--agent cursor` | `.cursor/skills/error-processing/` |
+
+例如 `node scripts/install-agent-skill.mjs --agent claude-code`。若 Agent 工作项目不同于 MCP 仓库，添加 `--project-root "<Agent 工作项目绝对路径>"`；项目级 MCP 配置也放在该工作项目，入口仍指向 MCP 仓库。`--check` 只读核对副本，文件存在不能代替宿主发现验证。详见 [中文安装指南](../agent-install.zh.md) / [English guide](../agent-install.md)。
+
+官方 skills 文档：[OpenCode](https://opencode.ai/docs/skills/)、[Claude Code](https://code.claude.com/docs/en/skills)、[Cursor](https://cursor.com/docs/skills)。
 
 ## 路径与工作目录
 
@@ -45,8 +59,9 @@ claude mcp add --transport stdio \
 ## English summary
 
 - **Cursor**: copy `cursor.mcp.json.example` to `.cursor/mcp.json` (project) or merge into your user-level Cursor MCP config.
-- **Claude Code**: copy `claude-code.mcp.json.example` to `.mcp.json` at repo root, or use `claude mcp add --transport stdio ...` per docs.
+- **Claude Code**: copy `claude-code.mcp.json.example` to `.mcp.json` in the agent's working project, or use `claude mcp add --transport stdio ...` per docs.
 - **OpenCode**: merge `opencode.mcp.fragment.json` under the `"mcp"` key—**do not** paste this shape into an `mcpServers` file.
+- **Skills**: run `node scripts/install-agent-skill.mjs --agent <opencode|claude-code|cursor>` for the selected host. Add `--project-root` when the agent's working project differs from the MCP repository. Verify native host discovery separately from file installation.
 
 ---
 

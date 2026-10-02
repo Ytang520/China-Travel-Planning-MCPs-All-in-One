@@ -24,7 +24,7 @@ export const searchArguments = (mode, dates = [], now = new Date()) => {
   if (mode === "flight") {
     if (dates.length > 1) throw new Error("usage: flight [YYYY-MM-DD]");
     return { departure_city: "上海", destination_city: "北京",
-      departure_date: dates[0] ?? addDays(today, 7), data_source_preference: "default" };
+      departure_date: dates[0] ?? addDays(today, 7), data_source_preference: "default", limit: 5 };
   }
   if (mode !== "hotel" || ![0, 2].includes(dates.length)) {
     throw new Error("usage: hotel [checkin checkout]");
@@ -59,12 +59,13 @@ export const validateSearchResult = (mode, result, expected) => {
   const count = mode === "flight" ? data.flight_count : data.count;
   if (!Array.isArray(records) || records.length === 0) throw new Error("EMPTY_RESULTS: browser search not verified");
   if (!Number.isInteger(count) || count !== records.length) throw new Error("Result count does not match records");
+  if (expected.limit != null && count > expected.limit) throw new Error("Result exceeds requested limit");
   if (mode === "flight") {
     const time = /^(?:[01]\d|2[0-3]):[0-5]\d(?:\s*\+\d+天)?$/;
-    const meaningful = records.some((record) => record &&
+    const meaningful = records.every((record) => record &&
       typeof record["航班号"] === "string" && /[A-Z0-9]{2}\s*\d{2,5}/i.test(record["航班号"]) &&
       time.test(record["出发时间"]) && time.test(record["到达时间"]));
-    if (!meaningful) throw new Error("No flight has a valid flight number and departure/arrival times");
+    if (!meaningful) throw new Error("A flight has an invalid flight number or departure/arrival times");
   } else {
     if (count > expected.limit || records.some((record) =>
       !record || typeof record.name !== "string" || !record.name.trim())) {

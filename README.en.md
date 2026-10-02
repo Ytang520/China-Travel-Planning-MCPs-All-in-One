@@ -10,9 +10,9 @@ English README for **[出行 MCP 统一网关](README.md)** — a single **stdio
 
 ## Feature overview
 
-- **Single gateway**: Run **one** MCP server process and reach train ticketing (12306), flights (FlightTicketMCP), maps (Amap MCP), and DiDi fare tools—fewer processes and configs for desktop hosts such as Cursor, Claude Code, or OpenCode.
+- **Single gateway**: Run **one** MCP server process and reach train ticketing (12306), flights (FlightTicketMCP), hotels (HotelTicketMCP), maps (Amap MCP), and DiDi fare tools—fewer processes and configs for desktop hosts such as Cursor, Claude Code, or OpenCode.
 - **Easy extension**: Downstream integrations register under fixed domains via each domain’s `registry.ts`; add providers under `src/domains/` (see [docs/extending.md](docs/extending.md)).
-- **Operations-friendly troubleshooting**: The OpenCode **error-processing** skill ([SKILL.md](.opencode/skills/error-processing/SKILL.md)) works with [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) to semantically match public docs for Amap, DiDi, and related failures—without ever dumping secrets—covering MCP connectivity, auth, schemas, and response-shape issues.
+- **Troubleshooting guidance**: The [error-processing skill template](skill-templates/error-processing/SKILL.md) supports OpenCode, Claude Code, and Cursor. The agent uses error context and the [reference index](skill-templates/error-processing/mcp-error-references.json) to select public documentation and produce structured troubleshooting advice.
 - **No source reading required**: the gateway ships `gateway_get_config` (redacted runtime config), `gateway_health_check` (per-domain light probes), and `gateway_list_retained_tools` (with parameter summaries) so agents can inspect capabilities without reading source code.
 
 ## Let an agent install it
@@ -20,8 +20,9 @@ English README for **[出行 MCP 统一网关](README.md)** — a single **stdio
 Copy this into your LLM agent session:
 
 ```text
-Install and configure Travel MCP Gateway by following the instructions here:
+Install and configure Travel MCP Gateway in this folder by following the instructions here:
 https://raw.githubusercontent.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/main/docs/agent-install.md
+Note that first download this file inside this folder, then read it.
 ```
 
 You can also read the [Agent installation guide](docs/agent-install.md).
@@ -80,6 +81,8 @@ node scripts/mcp-test.mjs config
 | `HOTEL_MCP_CONSENT` | ⚠ Risk-consent switch for hotel search: tools only work with `yes` (see "Hotel search risk notice") |
 | `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | Optional random interval between hotel searches, in seconds (default 30~300) |
 | `HOTEL_MCP_COOKIE_FILE` | Optional cookie file location (default `HotelTicketMCP/ctrip-hotel-cookies.json`, gitignored) |
+| `HOTEL_MCP_LOGIN_TIMEOUT` | Optional login wait in seconds, 1–840, default 840 |
+| `HOTEL_MCP_PROFILE_DIR` | Optional isolated hotel browser profile directory |
 
 Additional flight-related variables are documented in `FlightTicketMCP/.env.example`.
 
@@ -108,9 +111,9 @@ Hotel search drives a real browser that mimics human browsing and scrapes login-
 
 ### Direct and transfer routes
 
-- Train: **direct** and **interline/transfer** are supported (`train_12306_get_interline_tickets`, with the 12306 interline path fixed after the upstream site rework);
-- Flight: **direct only** — `flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace` relies on an unstable scraping chain and is hidden from the gateway;
-- Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, guest counts, price/star/score/room-type filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`); `hotel_ctrip_login` establishes the login state. See "Hotel search risk notice" above.
+- Train: **direct** (`train_12306_get_tickets`) and **interline/transfer** (`train_12306_get_interline_tickets`, currently the first ten results; the 12306 interline path was fixed after the upstream site rework). Station-code lookup and `train_12306_get_train_route_stations` are also retained;
+- Flight: **route search is direct only**. `getTransferFlightsByThreePlace` uses an unstable scraping chain and is hidden. Weather and OpenSky live-position tools remain available; see "Flight search" below;
+- Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, guest counts, price/star/score/room-type/accommodation/breakfast filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`). `limit` defaults to 20 and caps at 50. `hotel_ctrip_login` establishes the login state. See "Hotel search risk notice" above.
 
 ### Live browser checks after installation
 
@@ -150,11 +153,19 @@ Minimal **`mcpServers`** snippet compatible with **Cursor** when the MCP subproc
 }
 ```
 
-## OpenCode
+## Agent troubleshooting skill
 
-Example: [.opencode/opencode.json](.opencode/opencode.json). Replace placeholders with your real keys.
+Reuse the user's selected MCP host and install the shared template into the agent's working project:
 
-The project-level error-processing skill lives at [.opencode/skills/error-processing/SKILL.md](.opencode/skills/error-processing/SKILL.md), with MCP troubleshooting references in [.opencode/skills/error-processing/mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json).
+| Host | Command (from the MCP repository; choose one) | Destination |
+| --- | --- | --- |
+| OpenCode | `node scripts/install-agent-skill.mjs --agent opencode` | `.opencode/skills/error-processing/` |
+| Claude Code | `node scripts/install-agent-skill.mjs --agent claude-code` | `.claude/skills/error-processing/` |
+| Cursor | `node scripts/install-agent-skill.mjs --agent cursor` | `.cursor/skills/error-processing/` |
+
+The default destination is this repository. Add `--project-root "<absolute agent project path>"` if the agent uses MCP from another project. `--check` is read-only; identical installs are repeatable, while different existing files report a conflict and remain intact. Verify discovery in the target host after installation; see the [installation guide](docs/agent-install.md).
+
+Semantic matching is the agent's interpretation of errors and reference descriptions, guided by the skill prompt. There is no vector retrieval service. Advice appears in the conversation; the gateway does not invoke the skill or save reports automatically. OpenCode MCP configuration is illustrated separately in [.opencode/opencode.json](.opencode/opencode.json).
 
 ## Other
 
@@ -188,7 +199,7 @@ On startup the gateway calls `connectAndRegisterProvider` for each registered pr
 ## Documentation
 
 - **Agent installation guide:** [docs/agent-install.md](docs/agent-install.md) (English) · [docs/agent-install.zh.md](docs/agent-install.zh.md) (中文)
-- **Tool list, layout, provider extension, OpenCode, and error-processing skill:** [docs/extending.md](docs/extending.md) (English) · [docs/extending.zh.md](docs/extending.zh.md) (中文)
+- **Tool list, layout, provider extension, and agent skills:** [docs/extending.md](docs/extending.md) (English) · [docs/extending.zh.md](docs/extending.zh.md) (中文)
 
 ## Releases
 

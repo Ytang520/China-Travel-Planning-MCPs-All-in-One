@@ -9,7 +9,7 @@
 
 #### (1) MCP 宿主应用（必须先确认）
 
-在开始安装前，先使用 **AskUserQuestion**（或宿主等价的 `question` 工具）询问用户 1 个问题，确认用户将在何种应用中启用本 MCP（§7 将按该项分支编写配置）：
+在开始安装前，确认用户将在何种应用中启用本 MCP（§7 将按该项分支编写配置）：
 
 - **OpenCode** / **Cursor** / **Claude Code** / **其它**
 - 若选 **其它**：请用户提供 **准确产品名称**。你必须检索该产品 **官方 MCP 配置文档**（配置文件路径、根字段名、`stdio` 的 `command`/`args` 形态等），再生成配置；**禁止臆测**（例如勿把 OpenCode 的 `environment`/`command` 数组写入仅支持 `mcpServers` + `env` 的宿主）。
@@ -60,7 +60,7 @@ node scripts/install-agent-skill.mjs --agent cursor
 
 若 Agent 工作项目在其它目录，为所选命令添加 `--project-root "<Agent 工作项目绝对路径>"`。省略时目标始终是安装脚本所属 MCP 仓库，不随命令的当前工作目录改变。该目录须已存在；安装器不需要 npm 依赖，也不写入用户全局目录。
 
-安装器从 [通用模板](../skill-templates/error-processing/SKILL.md) 复制 `SKILL.md` 与同目录 `mcp-error-references.json`，相同内容可重复安装。不同内容返回 `conflict` 和非零退出码，并保持原文件；先审查差异，保留用户定制后人工合并，不自动强制覆盖。其它目录的同名 skill 会被列入 `otherCopies`，需核对宿主实际发现的版本，不能自动删除。未知宿主、无效模板或路径冲突均应处理后再继续。
+安装器从 [通用模板](skill-templates/error-processing/SKILL.md) 复制 `SKILL.md` 与同目录 `mcp-error-references.json`，相同内容可重复安装。不同内容返回 `conflict` 和非零退出码，并保持原文件；先审查差异，保留用户定制后人工合并，不自动强制覆盖。其它目录的同名 skill 会被列入 `otherCopies`，需核对宿主实际发现的版本，不能自动删除。未知宿主、无效模板或路径冲突均应处理后再继续。
 
 为同一命令添加 `--check` 可只读检查：`current` 表示与模板一致；`missing` / `conflict` 退出码为 1。人工定制与模板不同会持续显示 `conflict`，不代表定制 skill 必然无效。`hostDiscovery: not-verified` 表示脚本未验证宿主加载情况。
 
@@ -130,7 +130,9 @@ cd ..
 
 ### 5.1 交互式收集 Key
 
-而后，按以下顺序使用 `question` 工具询问用户下面 4 个问题：
+按以下顺序使用 `question` 工具询问用户：
+
+> **AskUserQuestion / `question` 工具约束**：一次调用最多 4 个问题；**每个问题至少 2 个选项**（单选项问题会被整体拒绝，不要构造单选项问题，也不要凑数选项）；**问题与选项默认使用中文**。密钥属于自由文本，可使用问题自带的自由文本输入（如 **Other**），也允许本地命令或交互输入；按用户授权写入 `.env`，**Agent 不得主动回显真实密钥**。
 
 **A. AMAP Maps API Key（高德地图）**
 
@@ -174,7 +176,7 @@ question: "是否启用携程酒店搜索（hotel 域）？⚠ 该功能通过�
 选项:
   - "启用，我自愿承担风险" → 写入 HOTEL_MCP_CONSENT=yes
   - "不启用" → 不写入 HOTEL_MCP_CONSENT（或写入 no），酒店工具调用时返回 CONSENT_REQUIRED 错误
-说明: 两次酒店搜索之间会自动等待随机 30s~5min；搜索返回 LOGIN_REQUIRED 时调用 hotel_ctrip_login，先通过 MCP 原生提问让用户选择是否打开登录页。若返回 USER_INTERACTION_REQUIRED，必须调用 AskUserQuestion 或宿主的原生提问工具，并等待实际回答后传入 user_action。详见 [酒店登录交互](hotel-login.md)。
+说明: 两次酒店搜索之间会自动等待随机 30s~5min；搜索返回 LOGIN_REQUIRED 时调用 hotel_ctrip_login，先通过 MCP 原生提问让用户选择是否打开登录页。若返回 USER_INTERACTION_REQUIRED，必须调用 AskUserQuestion 或宿主的原生提问工具，并等待实际回答后传入 user_action。详见 [酒店登录交互](docs/hotel-login.md)。
 ```
 
 ### 5.2 生成 .env 文件
@@ -259,13 +261,13 @@ node scripts/mcp-test.mjs config
 
 在完成 §6 构建后，按用户在 **§1 (1) MCP 宿主应用** 中的选择执行本节。**OpenCode** 使用字段 `mcp` / `environment` / `command`（数组）；**Cursor** 与 **Claude Code**（`.mcp.json`）通常使用 **`mcpServers` + `env`**，三者勿混用。
 
-可复制占位示例见目录 **[docs/mcp-client-examples/](mcp-client-examples/)**（与本文同级：`mcp-client-examples/README.md` 含索引与官方文档链接）。
+可复制占位示例见目录 **[docs/mcp-client-examples/](docs/mcp-client-examples/)**（`docs/mcp-client-examples/README.md` 含索引与官方文档链接）。
 
 #### 7.1 通用约定
 
 - 项目级客户端配置应位于 §1 (3) 确认的 Agent 工作项目（例如其中的 `.mcp.json` 或 `.cursor/mcp.json`）。如果该项目不同于 MCP 仓库，用绝对路径指向仓库入口与 provider。
 - 网关为 **stdio** 进程：`node` + `build/index.js`。
-- 环境变量名应与 `.env` / 宿主侧注入保持一致：`AMAP_MAPS_API_KEY`、`DIDI_MCP_KEY`、`FLIGHT_MCP_PYTHON_COMMAND`；可选 `TRAIN_12306_ENTRY`、`FLIGHT_MCP_PROJECT_ROOT`、`HOTEL_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PROJECT_ROOT`、`HOTEL_MCP_CONSENT`（见 [.env.example](../.env.example)）。注意：**仅当用户在 §5.1 D 同意风险条款后才注入 `HOTEL_MCP_CONSENT=yes`**，否则保持 `no`（酒店工具将返回 `CONSENT_REQUIRED`）。
+- 环境变量名应与 `.env` / 宿主侧注入保持一致：`AMAP_MAPS_API_KEY`、`DIDI_MCP_KEY`、`FLIGHT_MCP_PYTHON_COMMAND`；可选 `TRAIN_12306_ENTRY`、`FLIGHT_MCP_PROJECT_ROOT`、`HOTEL_MCP_PYTHON_COMMAND`、`HOTEL_MCP_PROJECT_ROOT`、`HOTEL_MCP_CONSENT`（见 [.env.example](.env.example)）。注意：**仅当用户在 §5.1 D 同意风险条款后才注入 `HOTEL_MCP_CONSENT=yes`**，否则保持 `no`（酒店工具将返回 `CONSENT_REQUIRED`）。
 - 若宿主拉起 MCP 时 **cwd 不是仓库根**：将 `./build/index.js`（及相关 `./12306-mcp`、`./FlightTicketMCP`、`./HotelTicketMCP`）改为 **绝对路径**。
 
 #### 7.2 对不同的 agent 框架
@@ -273,20 +275,20 @@ node scripts/mcp-test.mjs config
 (1) Cursor:
 
 (a) 阅读官方文档：[Cursor · MCP](https://cursor.com/docs/context/mcp)。
-(b) 基于 [cursor.mcp.json.example](mcp-client-examples/cursor.mcp.json.example) 在项目根创建或合并 **`.cursor/mcp.json`**（或与用户目录全局配置合并，优先级以文档为准）。
+(b) 基于 [cursor.mcp.json.example](docs/mcp-client-examples/cursor.mcp.json.example) 在项目根创建或合并 **`.cursor/mcp.json`**（或与用户目录全局配置合并，优先级以文档为准）。
 (c) 替换占位密钥（或由宿主从安全存储读取）；保存后按 Cursor 说明重启或刷新 MCP。
 
 (2) Claude Code:
 
 (a) 阅读官方文档：[Connect Claude Code to tools via MCP](https://docs.claude.com/en/docs/claude-code/mcp.md)。
-(b) 将 [claude-code.mcp.json.example](mcp-client-examples/claude-code.mcp.json.example) 复制或合并为 **Agent 工作项目根目录**的 `.mcp.json`（project scope），或在该项目按文档使用 `claude mcp add --transport stdio ... --scope project`（示例命令见 [mcp-client-examples/README.md](mcp-client-examples/README.md)）。
+(b) 将 [claude-code.mcp.json.example](docs/mcp-client-examples/claude-code.mcp.json.example) 复制或合并为 **Agent 工作项目根目录**的 `.mcp.json`（project scope），或在该项目按文档使用 `claude mcp add --transport stdio ... --scope project`（示例命令见 [mcp-client-examples/README.md](docs/mcp-client-examples/README.md)）。
 (c) 注意 Claude Code 对 project MCP 的 **审批与 `--` 选项顺序**；引导用户完成 IDE 内授权。
 (d) 占位密钥处理方式同 §7.2 (1)。
 
 (3) OpenCode
 
-(a) OpenCode **不使用**与 Cursor 相同的顶层 **`mcpServers`**。请在配置文件中使用 **`mcp.<serverId>`**，并使用 **`environment`**（不是 `env`）、**`command`** 为 **字符串数组**（参见 [.opencode/opencode.json](../.opencode/opencode.json)）。
-(b) 将 [opencode.mcp.fragment.json](mcp-client-examples/opencode.mcp.fragment.json) **合并到用户的 `mcp` 对象内**（与现有条目并列）。
+(a) OpenCode **不使用**与 Cursor 相同的顶层 **`mcpServers`**。请在配置文件中使用 **`mcp.<serverId>`**，并使用 **`environment`**（不是 `env`）、**`command`** 为 **字符串数组**（参见 [.opencode/opencode.json](.opencode/opencode.json)）。
+(b) 将 [opencode.mcp.fragment.json](docs/mcp-client-examples/opencode.mcp.fragment.json) **合并到用户的 `mcp` 对象内**（与现有条目并列）。
 (c) 可选用 `$schema`: `https://opencode.ai/config.json`。占位密钥处理方式同 §7.2 (1)。
 
 (4) 其它宿主
@@ -407,11 +409,10 @@ node scripts/mcp-test.mjs taxi
 4. 使用 §1 (3) 所选宿主实际安装的 `error-processing` skill，读取该 skill 同目录的 `mcp-error-references.json`。若安装尚未完成，直接读取仓库 `skill-templates/error-processing/` 下的模板和索引进行排障，不假定存在 OpenCode 目录。
 5. 航班查询失败时优先调用 `gateway_get_config` 查看 provider 连接状态与浏览器策略（引擎、无头标志、浏览器路径覆盖）；浏览器相关错误常见原因：未安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 选错内核、`FLIGHT_MCP_HEADLESS=1` 被携程拦截。
 6. 酒店查询返回 `CONSENT_REQUIRED`：用户未同意风险条款（`.env` 中 `HOTEL_MCP_CONSENT` 不是 `yes`），按 §5.1 D 项重新询问用户。
-7. 酒店查询返回 `LOGIN_REQUIRED`：调用 `hotel_ctrip_login`，先由原生 MCP 提问让用户选择打开登录页或取消。若返回 `USER_INTERACTION_REQUIRED`，Agent 必须使用 AskUserQuestion 或宿主原生提问工具，等待实际回答后传入 `user_action=open_login` 或 `cancel`。选择打开后直接显示携程登录页；扫码或账号输入均在浏览器中完成，默认等待 14 分钟（`HOTEL_MCP_LOGIN_TIMEOUT`：1–840 秒）。成功后原参数重试查询一次；取消、关闭窗口或失败则停止。交互终端可运行 `node scripts/mcp-test.mjs login`；无交互终端仅在用户已经选择打开后才能使用 `--login-action=open_login`。详见 [酒店登录交互](hotel-login.md)。
+7. 酒店查询返回 `LOGIN_REQUIRED`：调用 `hotel_ctrip_login`，先由原生 MCP 提问让用户选择打开登录页或取消。若返回 `USER_INTERACTION_REQUIRED`，Agent 必须使用 AskUserQuestion 或宿主原生提问工具，等待实际回答后传入 `user_action=open_login` 或 `cancel`。选择打开后直接显示携程登录页；扫码或账号输入均在浏览器中完成，默认等待 14 分钟（`HOTEL_MCP_LOGIN_TIMEOUT`：1–840 秒）。成功后原参数重试查询一次；取消、关闭窗口或失败则停止。交互终端可运行 `node scripts/mcp-test.mjs login`；无交互终端仅在用户已经选择打开后才能使用 `--login-action=open_login`。详见 [酒店登录交互](docs/hotel-login.md)。
 8. 不要输出完整环境变量、token、真实密钥或私人账号数据。
 
-## Notes:
+## Operational notes
 
 1. 调用 **AskUserQuestion**（或宿主等价的 `question` 工具）时，问题与选项**默认使用中文**
-2. **AskUserQuestion / `question` 工具约束**：一次调用最多 4 个问题；**每个问题至少 2 个选项**（单选项问题会被整体拒绝，不要构造单选项问题，也不要凑数选项）；**问题与选项默认使用中文**。密钥属于自由文本，可使用问题自带的自由文本输入（如 **Other**），也允许本地命令或交互输入；按用户授权写入 `.env`，**Agent 不得主动回显真实密钥**。
-3. 浏览器验收须运行 `node scripts/mcp-test.mjs flight` 和 `node scripts/mcp-test.mjs hotel`。两个实例跨平台校验非空业务结果；连接成功不等于查询通过。环境与发现顺序、退出恢复及模拟测试限制见[运行指南](browser-runtime.md)。
+2. 浏览器验收须运行 `node scripts/mcp-test.mjs flight` 和 `node scripts/mcp-test.mjs hotel`。两个实例跨平台校验非空业务结果；连接成功不等于查询通过。环境与发现顺序、退出恢复及模拟测试限制见[运行指南](docs/browser-runtime.md)。

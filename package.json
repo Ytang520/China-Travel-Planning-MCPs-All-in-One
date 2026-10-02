@@ -10,7 +10,7 @@
     "start": "node build/index.js",
     "dev": "tsx src/index.ts",
     "check": "node scripts/mcp-test.mjs",
-    "test": "node --import tsx --test tests/downstreamClient.test.ts tests/gateway-shutdown.test.mjs tests/pythonInterpreter.test.ts tests/search-checks.test.mjs tests/hotel-interaction.test.ts"
+    "test": "node --import tsx --test tests/downstreamClient.test.ts tests/gateway-shutdown.test.mjs tests/pythonInterpreter.test.ts tests/search-checks.test.mjs tests/hotel-interaction.test.ts tests/install-agent-skill.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -18,11 +18,13 @@
 ├─ FlightTicketMCP/
 ├─ HotelTicketMCP/
 ├─ .opencode/
-│  ├─ opencode.json
-│  └─ skills/
-│     └─ error-processing/
-│        ├─ SKILL.md
-│        └─ mcp-error-references.json
+│  └─ opencode.json
+├─ skill-templates/
+│  └─ error-processing/
+│     ├─ SKILL.md
+│     └─ mcp-error-references.json
+├─ scripts/
+│  └─ install-agent-skill.mjs
 ├─ docs/
 │  ├─ assets/
 │  │  └─ workflow.png
@@ -63,7 +65,8 @@
 - `docs/agent-install.zh.md` / `docs/agent-install.md` 是面向 LLM Agent 的安装与验证指南
 - `docs/mcp-client-examples/` 存放 Cursor / Claude Code / OpenCode 的 MCP 配置占位示例（见其中 `README.md`）
 - `.opencode/opencode.json` 是 OpenCode 的项目级 MCP 配置示例
-- `.opencode/skills/error-processing/` 存放项目级错误处理 skill 及 MCP 排障参考索引
+- `skill-templates/error-processing/` 是错误处理 skill 与参考索引的唯一维护源；`scripts/install-agent-skill.mjs` 按目标宿主安装项目级副本
+- 生成的 `.opencode/skills/`、`.claude/skills/`、`.cursor/skills/` 由 `skills/` 忽略规则覆盖，不作为模板维护
 - 一级目录按业务域固定为：`train`、`flight`、`hotel`、`map`、`taxi`
 - 二级目录按具体子 MCP 划分，例如 `train/12306`、`hotel/ctrip`
 - 每个业务域的 `registry.ts` 汇总该域下所有 provider
@@ -220,14 +223,20 @@ transport: {
 
 用于在不读源码的前提下查看已启用的 provider、保留工具、浏览器策略与各域健康状态。
 
-## OpenCode 与错误处理 Skill
+## 按宿主安装错误处理 Skill
 
 - OpenCode 示例配置位于 `.opencode/opencode.json`，只配置统一网关 `travel-mcp-gateway`
 - Agent 安装指南位于 `docs/agent-install.zh.md` / `docs/agent-install.md`，用于让 Agent 完成依赖安装、环境模板复制、构建验证和客户端配置
-- 错误处理 skill 位于 `.opencode/skills/error-processing/SKILL.md`
-- MCP 排障参考索引位于 `.opencode/skills/error-processing/mcp-error-references.json`
-- 当出现 MCP 连接、鉴权、schema 或返回格式问题时，skill 会优先根据参考索引中的 `description` / `usage` 语义匹配公开文档；`triggers` 仅作为环境变量、provider id、工具名和中文名的可选别名
-- 排障时不应输出密钥、token、完整环境变量或私人账号数据
+- 通用模板为 [SKILL.md](../skill-templates/error-processing/SKILL.md) 与 [mcp-error-references.json](../skill-templates/error-processing/mcp-error-references.json)，引用资源相对 skill 目录解析
+- 安装器复用安装流程的宿主选择：`--agent opencode` → `.opencode/skills/error-processing/`，`--agent claude-code` → `.claude/skills/error-processing/`，`--agent cursor` → `.cursor/skills/error-processing/`
+- 默认目标是 MCP 仓库；`--project-root` 可指定 Agent 实际工作项目。未知宿主不能自动回退；其它产品须核对官方 skills 文档
+- 安装前校验源文件；相同内容不重复写入，存在不同内容时报告冲突并保留用户文件。`--check` 只读检查，退出码 0 表示与模板一致，非零表示缺失、冲突或校验失败
+- 安装器会提示项目内其它同名副本，避免兼容目录产生发现歧义；它不删除副本，也不验证宿主已加载。宿主发现方法见 [安装指南](agent-install.zh.md)
+- MCP 出错时，由宿主中的 Agent 根据参考索引 `description` / `usage` 及错误上下文选择 1–2 个相关公开来源；`triggers` 为可选别名。这是提示词工作流，不是 embedding、向量数据库或已知错误案例检索引擎
+- Agent 在对话中输出“错误摘要 / 已检查 / 判断 / 下一步”，仅在用户要求保存时写入文档；网关没有自动触发此 skill 的代码
+- 用户可以输入密钥，Agent 可以按授权写入本地配置；排障回复和日志不得主动回显真实密钥、token、完整环境变量或私人账号数据
+
+修改模板后，运行 `node --test tests/install-agent-skill.test.mjs` 验证宿主路径、跨目录安装、重复安装和冲突保护。已有定制副本需审查差异后合并，不通过安装器强制更新。
 
 ## 安全说明
 

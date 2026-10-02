@@ -55,14 +55,14 @@ node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
 ```
 
-The flight example is Shanghai → Beijing, seven days ahead. The hotel example is Wuhan, check-in seven days ahead and check-out nine days ahead, at most five hotels. Defaults use `Asia/Shanghai`, independent of host timezone. Optional dates:
+The flight example is Shanghai → Beijing, seven days ahead, with `limit: 5`. It stops further scrolling after collecting five valid, unique flights that satisfy any requested time filters. Fewer flights are allowed; ordinary tool calls can omit `limit` to collect without a count cap. Results follow page collection order, and statistics cover only returned records. Flight mode prints complete results rather than a character-truncated preview. The hotel example is Wuhan, check-in seven days ahead and check-out nine days ahead, at most five hotels. Defaults use `Asia/Shanghai`, independent of host timezone. Optional dates:
 
 ```text
 node scripts/mcp-test.mjs flight YYYY-MM-DD
 node scripts/mcp-test.mjs hotel YYYY-MM-DD YYYY-MM-DD
 ```
 
-The checks validate complete JSON/structured results, success status, source, route/city, dates, matching counts, nonempty records, and meaningful flight/hotel fields. Missing prices or fewer than five hotels are allowed. Empty results, login requirements, website blocks, malformed output and count mismatches return a nonzero exit code. They do not prove the browser query works merely because MCP connected.
+The checks validate complete JSON/structured results, success status, source, route/city, dates, matching counts, nonempty records, and meaningful flight/hotel fields. Missing prices or fewer than five flights/hotels are allowed; exceeding the requested limit fails acceptance. Empty results, login requirements, website blocks, malformed output and count mismatches return a nonzero exit code. They do not prove the browser query works merely because MCP connected.
 
 `npm run check` still runs the lightweight health check; flight/hotel health rows are connectivity-only. Run the two commands above for browser-search acceptance. Hotel live testing requires the existing explicit risk consent and a valid login. If necessary, use the existing `login` mode and complete login manually, then rerun the hotel example.
 

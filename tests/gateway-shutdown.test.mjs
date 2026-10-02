@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 mkdirSync(".validation", { recursive: true });
 
-const startGateway = (context, stall) => {
+const startGateway = (context, behavior) => {
   const directory = mkdtempSync(resolve(".validation", "gateway-shutdown-"));
   const ready = resolve(directory, "ready.pid");
   const entry = resolve(directory, "provider.mjs");
@@ -16,7 +16,13 @@ import { writeFileSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 // A bounded failsafe prevents a failed regression from leaving this test child alive.
 setTimeout(() => process.exit(90), 20000).unref();
-${stall ? `
+${behavior === "crash" ? `
+process.stdin.once('data', () => {
+  process.stderr.write('fixture provider startup failure\\n');
+  process.exit(7);
+});
+process.stdin.resume();
+` : behavior === "initialize" ? `
 process.stdin.once('data', () => writeFileSync(${JSON.stringify(ready)}, String(process.pid)));
 process.stdin.once('end', () => process.exit(0));
 process.stdin.resume();
@@ -25,9 +31,17 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 await delay(200);
 const server = new McpServer({ name: 'shutdown-test', version: '1' });
+${behavior === "tools/list" ? `
+const { ListToolsRequestSchema } = await import('@modelcontextprotocol/sdk/types.js');
+server.server.registerCapabilities({ tools: {} });
+server.server.setRequestHandler(ListToolsRequestSchema, async () => {
+  writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+  return await new Promise(() => {});
+});
+` : ""}
 process.stdin.once('end', () => process.exit(0));
 await server.connect(new StdioServerTransport());
-writeFileSync(${JSON.stringify(ready)}, String(process.pid));
+${behavior === "tools/list" ? "" : `writeFileSync(${JSON.stringify(ready)}, String(process.pid));`}
 `}
 `);
   const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
@@ -56,18 +70,33 @@ const until = async (predicate, milliseconds = 6000) => {
   assert.ok(predicate(), "Timed out waiting for gateway/provider progress");
 };
 
-test("host EOF during provider startup closes the pending child", { timeout: 12000 }, async (context) => {
-  const run = startGateway(context, true);
+for (const phase of ["initialize", "tools/list"]) {
+test(`host EOF during ${phase} cancels initialization and closes the child`, { timeout: 12000 }, async (context) => {
+  const run = startGateway(context, phase);
   await until(() => existsSync(run.ready));
   const pid = Number(readFileSync(run.ready, "utf8"));
   run.child.stdin.end();
   await until(() => run.child.exitCode !== null);
   assert.equal((await run.exited).code, 0, run.errors());
+  assert.match(run.errors(), /shutting down: host stdin EOF/);
+  assert.ok(run.errors().includes(`initialization cancelled during ${phase}: host stdin EOF`), run.errors());
+  assert.doesNotMatch(run.errors(), /failed to connect provider|fatal startup error/);
   assert.throws(() => process.kill(pid, 0), "Downstream process survived host EOF");
+});
+}
+
+test("provider crashes remain connection failures while the host stays connected", { timeout: 12000 }, async (context) => {
+  const run = startGateway(context, "crash");
+  await until(() => run.errors().includes("failed to connect provider train/12306"));
+  assert.match(run.errors(), /fixture provider startup failure/);
+  assert.doesNotMatch(run.errors(), /initialization cancelled/);
+  run.child.stdin.end();
+  await until(() => run.child.exitCode !== null);
+  assert.equal((await run.exited).code, 0, run.errors());
 });
 
 test("initialization sent during startup remains buffered until the gateway is ready", { timeout: 12000 }, async (context) => {
-  const run = startGateway(context, false);
+  const run = startGateway(context, "ready");
   run.child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
     protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "early-client", version: "1" },
   } }) + "\n");

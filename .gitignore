@@ -35,6 +35,7 @@ tmp/
 *.png
 .playwright-mcp/
 .sisyphus/
+# Host-installed skill copies are local; canonical sources live in skill-templates/.
 skills/
 
 .ruff_cache/

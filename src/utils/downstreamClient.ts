@@ -2,7 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { ErrorCode, McpError, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { getRuntimeConfig } from "../config.js";
@@ -19,9 +19,23 @@ import { prepareHotelLogin, withHotelRecovery } from "../domains/hotel/ctrip/log
 
 const activeClients = new Set<Client>();
 let closing = false;
+let closingReason = "shutdown";
+const initializations = new Set<{ controller: AbortController; phase: string }>();
 
-export const closeDownstreamClients = async () => {
+// A distinct cancellation reason survives the SDK's request cancellation handling.
+// ConnectionClosed on its own can also mean a real provider crash.
+export class ProviderInitializationCancelled extends McpError {
+  constructor(reason: string, phase: string) {
+    super(ErrorCode.ConnectionClosed, `initialization cancelled during ${phase}: ${reason}`);
+  }
+}
+
+export const closeDownstreamClients = async (reason = "shutdown") => {
+  if (!closing) closingReason = reason;
   closing = true;
+  for (const { controller, phase } of initializations) {
+    controller.abort(new ProviderInitializationCancelled(closingReason, phase));
+  }
   await Promise.allSettled([...activeClients].map((client) => client.close()));
   activeClients.clear();
 };
@@ -115,17 +129,22 @@ export const connectAndRegisterProvider = async (
     provider.transport.command = resolved.command;
     provider.python.resolvedSource = resolved.source;
   }
-  if (closing) throw new Error("Gateway is shutting down");
+  if (closing) throw new ProviderInitializationCancelled(closingReason, "preflight");
 
   const client = createClient();
   const transport = createTransport(provider);
   const registrations: ReturnType<McpServer["registerTool"]>[] = [];
+  const initialization = { controller: new AbortController(), phase: "initialize" };
+  const { signal } = initialization.controller;
+  initializations.add(initialization);
   activeClients.add(client);
   try {
-    await client.connect(transport);
+    await client.connect(transport, { signal });
+    signal.throwIfAborted();
 
-    const { tools } = await client.listTools();
-    if (closing) throw new Error("Gateway is shutting down");
+    initialization.phase = "tools/list";
+    const { tools } = await client.listTools(undefined, { signal });
+    signal.throwIfAborted();
     const retainedTools = tools
       .map(toToolDefinition)
       .filter((tool) => shouldRetainTool(provider, tool.name));
@@ -193,6 +212,8 @@ export const connectAndRegisterProvider = async (
     await transport.close().catch(() => undefined);
     activeClients.delete(client);
     throw error;
+  } finally {
+    initializations.delete(initialization);
   }
 };
 

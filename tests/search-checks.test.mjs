@@ -50,3 +50,12 @@ test("Ctrip overnight arrival times are valid", () => {
   const overnight = { ...flight, flights: [{ "航班号": "MU5101", "出发时间": "23:30", "到达时间": "00:30 +1天" }] };
   assert.equal(validateSearchResult("flight", result(overnight), flightArgs), 1);
 });
+
+test("flight acceptance enforces five complete, valid records", () => {
+  assert.equal(flightArgs.limit, 5);
+  const records = Array.from({ length: 6 }, (_, i) => ({ ...flight.flights[0], 航班号: `MU${5101 + i}` }));
+  assert.equal(validateSearchResult("flight", result({ ...flight, flights: records.slice(0, 5), flight_count: 5 }), flightArgs), 5);
+  assert.throws(() => validateSearchResult("flight", result({ ...flight, flights: records, flight_count: 6 }), flightArgs), /limit/);
+  assert.throws(() => validateSearchResult("flight", result({ ...flight,
+    flights: [records[0], { 航班号: "未知" }], flight_count: 2 }), flightArgs), /invalid flight/);
+});

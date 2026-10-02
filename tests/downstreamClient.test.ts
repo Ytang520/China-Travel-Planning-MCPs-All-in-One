@@ -24,7 +24,7 @@ const provider = (): DownstreamProviderDefinition => ({
   transport: { kind: "stdio", command: process.execPath,
     args: ["--input-type=module", "-e", script, pidFile], cwd: process.cwd() },
 });
-after(closeDownstreamClients);
+after(() => closeDownstreamClients());
 
 test("Python preflight failure is isolated before spawning a downstream client", async () => {
   const broken = provider();

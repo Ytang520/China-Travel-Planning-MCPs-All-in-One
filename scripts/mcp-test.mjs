@@ -328,7 +328,8 @@ try {
           (await callTool(name, args, name === "hotel_ctrip_login" ? 1110000 : 990000, false)).result,
           searchRequest, message => printText(message, 500));
     const text = textOf(result);
-    printText(text, 4000);
+    // Flight acceptance returns at most five records; print complete records/JSON.
+    printText(text, flight ? Infinity : 4000);
     const count = validateSearchResult(mode, result, searchRequest);
     printText(`PASS ${mode}: browser search returned ${count} records (${process.platform})`, 150);
   }

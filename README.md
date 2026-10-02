@@ -12,7 +12,7 @@
 
 - **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、酒店（HotelTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低agent 负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
-- **排障辅助**：提供 OpenCode 项目级 error-processing skill（[SKILL.md](.opencode/skills/error-processing/SKILL.md)），并结合 [mcp-error-references.json](.opencode/skills/error-processing/mcp-error-references.json) 对高德、滴滴等场景的公开文档做语义索引, 辅助归类 MCP 连接、鉴权、schema 与返回格式等问题。
+- **排障辅助**：提供适用于 OpenCode、Claude Code 与 Cursor 的 [error-processing skill 模板](skill-templates/error-processing/SKILL.md)。Agent 根据错误上下文及 [参考索引](skill-templates/error-processing/mcp-error-references.json) 选择公开资料，输出结构化排障建议。
 - **免读源码**：网关内置 `gateway_get_config`（脱敏运行态配置）、`gateway_health_check`（按域轻量探测）、`gateway_list_retained_tools`（含工具参数摘要），代理无需读源码即可了解能力与参数。
 
 ## 让 Agent 安装
@@ -80,6 +80,8 @@ node scripts/mcp-test.mjs config
 | `HOTEL_MCP_CONSENT` | ⚠ 酒店搜索风险同意开关：`yes` 才启用酒店工具（见下文「酒店搜索风险告知」） |
 | `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | 可选，两次酒店搜索之间的随机间隔范围（秒，默认 30~300） |
 | `HOTEL_MCP_COOKIE_FILE` | 可选，酒店登录 cookie 文件位置（默认 `HotelTicketMCP/ctrip-hotel-cookies.json`，已 gitignore） |
+| `HOTEL_MCP_LOGIN_TIMEOUT` | 可选，登录等待秒数，范围 1–840，默认 840 |
+| `HOTEL_MCP_PROFILE_DIR` | 可选，酒店浏览器独立 profile 目录 |
 
 航班相关补充变量见 `FlightTicketMCP/.env.example`。
 
@@ -108,9 +110,9 @@ node scripts/mcp-test.mjs config
 
 ### 直达与中转说明
 
-- 火车（train）：支持**直达**与**中转/联程**（`train_12306_get_interline_tickets`，12306 中转接口路径已随上游改版修复）；
-- 航班（flight）：**仅支持直达**，`flight_flight_ticket_mcp_server_getTransferFlightsByThreePlace`（航班中转）抓取链路不稳定，网关已隐藏该工具；
-- 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`hotel_ctrip_login` 用于建立登录态。详见上文「酒店搜索风险告知」。
+- 火车（train）：支持**直达**（`train_12306_get_tickets`）与**中转/联程**（`train_12306_get_interline_tickets`，目前返回前十条；12306 中转接口路径已随上游改版修复），以及车站编码查询和 `train_12306_get_train_route_stations` 经停站查询；
+- 航班（flight）：**路线搜索仅支持直达**。`getTransferFlightsByThreePlace` 抓取链路不稳定，网关已隐藏。天气与 OpenSky 实时位置是另外保留的工具，见下文「航班查询」；
+- 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分/房型/住宿类型/早餐筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`limit` 默认 20、最大 50。`hotel_ctrip_login` 用于建立登录态。详见上文「酒店搜索风险告知」。
 
 ### 安装后真实查询验收
 
@@ -149,6 +151,20 @@ node scripts/mcp-test.mjs hotel
   }
 }
 ```
+
+## Agent 排障 skill
+
+安装时复用用户选择的 MCP 宿主，将同一模板部署到 Agent 工作项目：
+
+| 宿主 | 安装命令（在 MCP 仓库根目录运行，三选一） | 目标目录 |
+| --- | --- | --- |
+| OpenCode | `node scripts/install-agent-skill.mjs --agent opencode` | `.opencode/skills/error-processing/` |
+| Claude Code | `node scripts/install-agent-skill.mjs --agent claude-code` | `.claude/skills/error-processing/` |
+| Cursor | `node scripts/install-agent-skill.mjs --agent cursor` | `.cursor/skills/error-processing/` |
+
+默认安装到本仓库；若 Agent 在另一个项目使用 MCP，添加 `--project-root "<Agent 工作项目绝对路径>"`。`--check` 只读检查文件，相同内容可重复安装，不同内容会报告冲突并保留原文件。安装后须在目标宿主确认 skill 可被发现；完整流程见 [安装指南](docs/agent-install.zh.md)。
+
+语义匹配由 Agent 按提示词理解错误与参考描述完成，不包含向量检索服务。结构化建议在对话中输出；网关不自动调用 skill 或保存报告文件。
 
 ## 其他
 
