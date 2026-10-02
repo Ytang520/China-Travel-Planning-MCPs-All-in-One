@@ -10,23 +10,50 @@
 
 ## [Unreleased]
 
-### Added
+## [0.2.1] - 2026-10-02
 
-- 新业务域 `hotel`：`HotelTicketMCP` 子项目（Python，FastMCP + DrissionPage）通过可见浏览器抓取携程酒店列表。工具：`hotel_ctrip_searchHotels`（城市/地标、日期、人数、价格/星级/评分/房型/住宿类型筛选，排序 smart/price_asc/distance/score_desc，limit≤50）、`hotel_ctrip_login`（打开可见窗口手动登录并保存 cookie）。
-- 登录态流程（方案 A，按次开关浏览器）：每次搜索/登录完成后立即关闭浏览器进程（无长驻）；登录态由 cookie 文件注入承载——注入 `ctrip-hotel-cookies.json`（含 HttpOnly，`set.cookies` 原生支持）→ 重新导航检测 → 失败返回 `LOGIN_REQUIRED` 并引导用户经 `hotel_ctrip_login` 重登。登录态检测以「非登录态标记」为准（passport 重定向或顶栏 登录+注册），不依赖具体会员身份文本。
-- 防封机制：两次酒店搜索间随机 30s~5min 间隔（`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；人性化滚动（随机步幅 ≥0.45 视口、随机停顿、偶发回滚与鼠标移动；双指标连续 3 轮零增长判底）；浏览器单飞锁 + 按 profile 路径精确清理自身残留进程。
-- 风险同意开关 `HOTEL_MCP_CONSENT`：未同意时酒店工具返回 `CONSENT_REQUIRED`；安装流程新增交互询问（封禁风险明示，自愿承担，作者概不负责）。
-- 网关：`gateway_health_check` 支持 hotel（connectivity-only）；`gateway_get_config` 新增 hotelBrowser 段；`scripts/mcp-test.mjs` 新增 `hotel` 模式。
-- HotelTicketMCP 单元测试 34 项（限速/cookie 存储/城市字典/URL 构造/登录判定/卡片解析/参数校验；pytest basetemp 固定在项目内，规避系统 TEMP 权限问题）。
+本版新增携程酒店搜索与交互式登录，完善浏览器与 Python 环境发现、登录恢复及进程清理，并提供可重复执行的安装验收脚本。
 
-### Changed
+### 与 v0.2.0 的主要差别
 
-- 航班浏览器 profile 加固：`FlightRouteSearcher` 改为每次查询显式全新临时 profile（`set_local_port` + `set_user_data_path(mkdtemp())`）并在启动时清空浏览器 cookie，保证航班抓取永远未登录（此前依赖 PortFinder 端口-目录复用行为，属隐式保证）。
-- 网关启动日志、工具清单、安装指南与排障文档同步覆盖 hotel 域。
+| 项目 | v0.2.0 | v0.2.1 |
+| --- | --- | --- |
+| 业务域 | 火车、航班、地图、打车 | 新增携程酒店搜索与登录，共五个业务域 |
+| 浏览器发现 | 显式路径或 Windows 常见安装路径 | 支持 Windows、macOS、Linux 的本机发现、路径校验和受控回退 |
+| Python 解释器 | 默认使用 `python` 或显式指定命令 | 校验显式命令，或依次探测项目根目录及 provider 的 `.venv`，检查版本与依赖 |
+| 安装验收 | 按安装指南手工调用工具 | 新增分域测试脚本，校验实际查询结果、日期、字段及记录数量 |
 
-### Security
+### 新增功能
 
-- `.gitignore` 新增：`HotelTicketMCP/.venv/`、`.browser-profile/`、`ctrip-hotel-cookies.json`、`logs/`、`.pytest-tmp/`、`.pytest_cache/`、根目录 `ctrip-cookies.json`、`edge_hotels.json`——酒店登录 cookie 与浏览器 profile 永不入库。
+- `hotel_ctrip_searchHotels`：支持城市或地标、入住/退房日期、人数、价格、星级、评分、房型与住宿类型筛选，以及智能、价格、距离、评分排序，最多返回 50 条记录。
+- `hotel_ctrip_login`：通过可见浏览器完成携程登录，验证登录态后原子保存包含 HttpOnly 的 cookies，供后续查询及新浏览器会话复用。
+- 酒店登录前使用 MCP 原生用户选择；客户端不支持时返回明确的用户操作请求。命令行支持交互选择及外部已确认的登录操作，登录成功后可恢复原查询一次。
+- 酒店查询提供 `HOTEL_MCP_CONSENT` 同意开关、可配置的随机查询间隔，以及同一 profile 的跨进程互斥。
+- 网关工具清单、配置诊断及健康检查覆盖酒店域；航班和酒店健康检查只检查连通性，实际查询由专项测试校验。
+
+### 稳定性与诊断
+
+- 登录跳转期间页面读取异常支持有时间上限的恢复等待，分别判断浏览器退出、标签页关闭、控制连接中断和暂时无法判断的登录态。
+- 登录默认等待上限为 840 秒，支持进度通知和取消；成功流程在关闭浏览器前完成 cookie 保存，取消流程防止后台迟到写入。
+- 登录诊断按请求关联阶段、恢复次数、保存结果和结束原因，便于定位提前关窗、超时与连接异常。
+- 航班查询使用独立临时 profile；航班和酒店通过进程身份、profile 及端口检查清理本次拥有的浏览器。网关退出、宿主断开或 provider 初始化失败时回收下游连接。
+- 网关支持 Python 工具参数中的 JSON Schema `null` 类型，避免可空参数在转发前被错误拒绝。
+
+### 配置、隐私与升级
+
+- 新增 `npm run check` 和 `scripts/mcp-test.mjs` 的分域验收入口；输出对密钥及本机路径进行脱敏。中英文安装指南、客户端示例和浏览器排障文档同步更新。
+- `.gitignore` 覆盖本地密钥配置、酒店 cookies、浏览器 profile、运行日志、测试临时文件及凭据备份文件；登录诊断不记录 cookie 值、账号文本或完整页面 URL。
+- 浏览器服务要求 Python 3.11+、DrissionPage 4.1.1.4+ 和 psutil 5.9+。已有安装请按[安装指南](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/blob/v0.2.1/docs/agent-install.zh.md)更新项目虚拟环境中的依赖并重新构建网关。
+- 配置入口：MCP 客户端通过环境变量启动网关，测试脚本读取根目录 `.env`；酒店 cookies 默认保存在 `HotelTicketMCP/ctrip-hotel-cookies.json`，可由 `HOTEL_MCP_COOKIE_FILE` 指定位置。
+
+### 验证
+
+- TypeScript 构建通过，Node 测试 37 项通过。
+- Python 测试 164 项通过；默认跳过的 3 项 Edge 集成测试已在 Windows Edge 环境单独通过。
+- 已验证真实扫码登录、关闭浏览器前保存 cookies，以及新浏览器会话复用登录态并完成酒店查询。
+- macOS/Linux 的发现与运行时分支通过模拟测试；原生浏览器验收环境为 Windows Edge。
+
+[完整文件差异：v0.2.0 → v0.2.1](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/compare/v0.2.0..v0.2.1)
 
 ## [0.2.0] - 2026-09-28
 

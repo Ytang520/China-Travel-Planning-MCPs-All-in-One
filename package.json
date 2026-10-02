@@ -1,6 +1,6 @@
 {
   "name": "travel-mcp-gateway",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "license": "MIT",
   "description": "A unified travel MCP gateway for train, flight, hotel, map, and taxi providers.",
