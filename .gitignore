@@ -1,9 +1,13 @@
 node_modules/
 build/
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 .mcp.json
+.mcp.json.*
+!.mcp.json.example
 log.txt
 .venv/
 .uv-cache/
@@ -46,6 +50,7 @@ HotelTicketMCP/.env
 HotelTicketMCP/.venv/
 HotelTicketMCP/.browser-profile/
 HotelTicketMCP/ctrip-hotel-cookies.json
+HotelTicketMCP/ctrip-hotel-cookies.json.*
 HotelTicketMCP/logs/
 HotelTicketMCP/.pytest-tmp/
 .pytest_cache/
@@ -53,6 +58,8 @@ HotelTicketMCP/.pytest-tmp/
 
 # Ctrip cookie captures / scraping artifacts (personal login data, never commit)
 ctrip-cookies.json
+ctrip-cookies.json.*
 edge_hotels.json
+edge_hotels.json.*
 
 12306-mcp/node_modules/
