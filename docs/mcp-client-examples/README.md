@@ -38,7 +38,7 @@ claude mcp add --transport stdio \
   --scope project travel-mcp-gateway -- node ./build/index.js
 ```
 
-> **酒店风险同意**：上述示例中的 `HOTEL_MCP_CONSENT` 默认为 `no`（酒店工具返回 `CONSENT_REQUIRED`）。只有在安装流程中用户明确同意封禁风险条款后（见 [agent-install.zh.md](../agent-install.zh.md) §4.1 D），才应将其改为 `yes`——改为 `yes` 即表示用户自愿承担账号封禁风险，作者概不负责。
+> **酒店风险同意**：上述示例中的 `HOTEL_MCP_CONSENT` 默认为 `no`（酒店工具返回 `CONSENT_REQUIRED`）。只有在安装流程中用户明确同意封禁风险条款后（见 [agent-install.zh.md](../agent-install.zh.md) §5.1 D），才应将其改为 `yes`——改为 `yes` 即表示用户自愿承担账号封禁风险，作者概不负责。
 
 具体标志与 `--` 分隔规则以 [Claude Code MCP 文档](https://docs.claude.com/en/docs/claude-code/mcp.md) 为准。
 
