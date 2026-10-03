@@ -110,7 +110,7 @@ Query tools from `HotelTicketMCP`:
 - `hotel_ctrip_searchHotels`
 - `hotel_ctrip_login`
 
-Hotel search scrapes the login-gated Ctrip hotel list through a visible browser. Requires `HOTEL_MCP_CONSENT=yes` (ban-risk consent) and a Ctrip login state (`hotel_ctrip_login`); searches are rate-limited by a random 30s–5min interval. See the README "Hotel search risk notice".
+Hotel search scrapes the login-gated Ctrip hotel list through a visible browser. Requires `HOTEL_MCP_CONSENT=yes` (ban-risk consent) and a Ctrip login state (`hotel_ctrip_login`); searches are rate-limited by a random 15s–3min interval. See the README "Hotel search risk notice".
 
 ### `map/amap`
 

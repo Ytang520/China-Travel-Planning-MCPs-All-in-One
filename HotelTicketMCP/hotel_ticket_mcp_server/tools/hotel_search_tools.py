@@ -10,15 +10,19 @@ import logging
 import random
 import time
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 from ..utils import cities_dict, cookie_store, login_state, url_builder
 from ..utils import consent
+from ..utils import location_resolver, search_state
+from ..utils.location_cache import LocationCache, normalize_name
 from ..utils.browser_factory import SEARCH_LOCK, browser_session
 from ..utils.rate_limiter import SearchRateLimiter
 
 logger = logging.getLogger(__name__)
 
 _RATE_LIMITER = SearchRateLimiter()
+_LOCATION_CACHE = LocationCache()
 
 LOGIN_ERROR = {
     "status": "error",
@@ -84,7 +88,7 @@ def _error(code, message):
 
 
 def _validate_params(city, checkin, checkout, limit, adults, rooms):
-    if not city or not checkin or not checkout:
+    if not city or not city.strip() or not checkin or not checkout:
         return _error("INVALID_PARAMS", "city、checkin、checkout 都不能为空")
     for label, value in (("checkin", checkin), ("checkout", checkout)):
         try:
@@ -141,6 +145,8 @@ def _ensure_logged_in(page, target_url):
         return LOGIN_ERROR
     try:
         injectable = cookie_store.to_injectable(cookies)
+        if not injectable:
+            return LOGIN_ERROR
     except (KeyError, TypeError, ValueError):
         logger.warning("cookie 文件内容无效，需要重新登录")
         return LOGIN_ERROR
@@ -177,28 +183,24 @@ def _resolve_city_via_ui(page, city):
     try:
         page.get("https://hotels.ctrip.com/hotels/", timeout=90)
         time.sleep(4)
-        inputs = page.eles("css:input[type='text'], input:not([type])", timeout=8)
-        box = None
-        for el in inputs[:5]:
-            try:
-                if el.rect.size and el.rect.size[0] > 100:
-                    box = el
-                    break
-            except Exception:
-                continue
-        if box is None:
+        box = page.ele('css:input[placeholder="目的地"]', timeout=8)
+        if not box:
             return None
-        box.input(city)
+        box.input(city, clear=True)
         time.sleep(1)
         btn = page.ele("text:搜索", timeout=5)
         if not btn:
             return None
         btn.click()
-        deadline = time.time() + 15
-        while time.time() < deadline:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
             time.sleep(2)
             url = page.url or ""
             if "cityId=" in url:
+                query = parse_qs(urlsplit(url).query)
+                actual_city = query.get("cityName", [""])[0]
+                if normalize_name(actual_city).removesuffix("市") != normalize_name(city).removesuffix("市"):
+                    continue
                 import re
 
                 match = re.search(r"cityId=(\d+)", url)
@@ -379,8 +381,30 @@ def searchHotels(
     if err:
         return err
 
+    city = city.strip()
+    location = location.strip() if location else None
+    if sort not in search_state.SORT_LABELS:
+        return _error("INVALID_PARAMS", "sort 必须为 smart/price_asc/distance/score_desc")
+    if sort == "distance" and not location:
+        return _error("INVALID_PARAMS", "距离排序需要明确的 location 地点作为锚点")
+    for low, high, name in ((price_min, price_max, "价格"), (star_min, star_max, "星级")):
+        if low is not None and high is not None and low > high:
+            return _error("INVALID_PARAMS", name + "下限不能高于上限")
+    if children < 0 or any(value is not None and value < 0 for value in (price_min, price_max)):
+        return _error("INVALID_PARAMS", "人数与价格不能为负数")
+    if any(value is not None and not 1 <= value <= 5 for value in (star_min, star_max)):
+        return _error("INVALID_PARAMS", "星级必须在 1~5 之间")
+    if min_score is not None and not 0 <= min_score <= 5:
+        return _error("INVALID_PARAMS", "最低评分必须在 0~5 之间")
+    for value, choices, name in (
+        (room_type, url_builder.VALID_ROOM_TYPES, "room_type"),
+        (accommodation_type, url_builder.VALID_ACCOMMODATION_TYPES, "accommodation_type"),
+    ):
+        if value is not None and value not in choices:
+            return _error("INVALID_PARAMS", f"{name} 必须为以下单个值之一：{'、'.join(choices)}；不限时省略或传 null")
+
     # Missing credentials must prompt immediately, before throttling or launching a browser.
-    if not cookie_store.load_cookies():
+    if not cookie_store.to_injectable(cookie_store.load_cookies()):
         return dict(LOGIN_ERROR)
 
     rate_info = _RATE_LIMITER.wait_if_needed()
@@ -397,97 +421,126 @@ def searchHotels(
             return _error(getattr(e, "code", "BROWSER_LAUNCH_FAILED"), str(e))
 
         city_ids = cities_dict.get_city_ids(city)
-        landmark_code = cities_dict.get_landmark(location) if location else None
         if city_ids is None:
-            logger.info("城市 %s 不在字典中，尝试 UI 回退解析", city)
             city_ids = _resolve_city_via_ui(page, city)
             if city_ids is None:
-                return _error(
-                    "CITY_NOT_FOUND",
-                    f"暂不支持城市 {city!r}（内置字典未覆盖且 UI 回退解析失败）",
-                )
-
-        built = url_builder.build_list_url(
-            city,
-            city_ids,
-            checkin,
-            checkout,
-            landmark=location,
-            landmark_code=landmark_code,
-            rooms=rooms,
-            adults=adults,
-            children=children,
-            price_min=price_min,
-            price_max=price_max,
-            star_min=star_min,
-            star_max=star_max,
-            room_type=room_type,
-            accommodation_type=accommodation_type,
-            sort=sort,
-        )
-        warnings = list(built["warnings"])
+                return _error("CITY_NOT_FOUND", f"无法确认城市 {city!r}")
+        options = dict(city=city, city_ids=city_ids, checkin=checkin, checkout=checkout,
+                       landmark=location, rooms=rooms, adults=adults, children=children,
+                       price_min=price_min, price_max=price_max, star_min=star_min, star_max=star_max,
+                       room_type=room_type, accommodation_type=accommodation_type, sort=sort)
+        warnings = []
         if breakfast:
             warnings.append("早餐筛选暂无已验证的筛选编码，已忽略")
+        resolved = _LOCATION_CACHE.get(city_ids[0], location) if location else None
+        source = "cache" if resolved else "keyword"
+        if not resolved and location:
+            resolved = cities_dict.get_landmark(city_ids[0], location)
+            if resolved:
+                source = "seed"
+        built = url_builder.build_list_url(**options, resolved_location=resolved)
+        warnings.extend(built["warnings"])
 
-        try:
-            loaded = page.get(built["url"], retry=0, timeout=90)
-        except Exception as e:
-            return _error("SCRAPING_FAILED", f"页面打开失败: {e}")
-        if loaded is False:
-            return _error("SCRAPING_FAILED", "酒店页面加载失败，请稍后重试。")
-        time.sleep(5)
+        def navigate(target):
+            try:
+                if page.get(target, retry=0, timeout=90) is False:
+                    return _error("SCRAPING_FAILED", "酒店页面加载失败，请稍后重试。")
+            except Exception:
+                return _error("SCRAPING_FAILED", "酒店页面加载失败，请检查浏览器连接。")
+            return None
 
+        failure = navigate(built["url"])
+        if failure:
+            return failure
         login_err = _ensure_logged_in(page, built["url"])
         if login_err:
             return login_err
-
-        # 登录判定通过但列表容器缺失 → 可能被反爬拦截或页面结构变化。
-        # 注意：DrissionPage 找不到元素时返回 falsy 的 NoneElement（不是 None），
-        # 必须用真值判断而非 `is not None`。
         try:
-            has_list = bool(page.ele("css:.hotel-list", timeout=10))
-        except Exception:  # pragma: no cover - ele 超时抛错视为未渲染
-            has_list = False
-        if not has_list:
-            return _error(
-                "SCRAPING_FAILED", "酒店列表未渲染（可能被拦截或页面结构变化）"
-            )
+            state, resolution = search_state.wait_for_state(
+                page, built["url"], location, city_ids[0], source=source, resolved=resolved)
+            if resolved and (not resolution["applied"] or not search_state.request_applied(state, built["url"])):
+                _LOCATION_CACHE.invalidate(city_ids[0], location)
+                resolved, source = None, "keyword"
+                built = url_builder.build_list_url(**options)
+                failure = navigate(built["url"])
+                if failure:
+                    return failure
+                state, resolution = search_state.wait_for_state(
+                    page, built["url"], location, city_ids[0], source=source)
 
-        # 首屏随机停驻，模拟阅读
-        time.sleep(random.uniform(1.5, 4.0))
+            if location and not resolution["applied"]:
+                if urlsplit(state.get("url", "")).hostname == "passport.ctrip.com":
+                    return {**LOGIN_ERROR, "return_url": built["url"]}
+                # One bounded UI resolution attempt per call, only after keyword evidence fails.
+                outcome = location_resolver.resolve_location(page, city_ids[0], location)
+                if outcome["status"] != "resolved":
+                    state_name = outcome["status"]
+                    resolution.update(status=state_name, applied=False, source="candidate",
+                                      candidates=outcome.get("candidates", []),
+                                      reason=outcome.get("reason"))
+                    code = {"ambiguous": "LOCATION_AMBIGUOUS", "not_found": "LOCATION_NOT_FOUND"}.get(
+                        state_name, "LOCATION_UNAVAILABLE")
+                    return {**_error(code, "无法唯一确认地点；请使用候选中的完整名称、线路或出口重新查询。"),
+                            "location_resolution": resolution, "warnings": warnings}
+                resolved, source = outcome["location"], "candidate"
+                # Copy only provider location fields, never the candidate UI's date/room/filter state.
+                built = url_builder.build_list_url(**options, resolved_location=resolved)
+                failure = navigate(built["url"])
+                if failure:
+                    return failure
+                state, resolution = search_state.wait_for_state(
+                    page, built["url"], location, city_ids[0], source=source, resolved=resolved)
 
-        raw_cards = _human_scroll_and_collect(page, int(limit))
-        hotels = parse_cards(raw_cards, min_score=min_score)[: int(limit)]
+            if not resolution["applied"]:
+                if urlsplit(state.get("url", "")).hostname == "passport.ctrip.com":
+                    return {**LOGIN_ERROR, "return_url": built["url"]}
+                return {**_error("LOCATION_NOT_APPLIED", "地点已解析，但无法确认列表已应用该地点。"),
+                        "location_resolution": resolution, "warnings": warnings}
+            if not search_state.request_applied(state, built["url"]):
+                return {**_error("QUERY_NOT_APPLIED", "无法确认城市、日期、人数或筛选条件已应用。"),
+                        "location_resolution": resolution, "warnings": warnings}
+            if resolved:
+                _LOCATION_CACHE.put(resolved.name, resolved, applied=True)
 
+            state = search_state.apply_sort(page, sort)
+            resolution = search_state.verify_location(
+                state, location, city_ids[0], source=source, resolved=resolved)
+            sorting = search_state.verify_sort(state, sort, resolution)
+            if not resolution["applied"] or not search_state.request_applied(state, built["url"]):
+                return {**_error("QUERY_NOT_APPLIED", "排序后地点或查询条件发生变化，结果未确认。"),
+                        "location_resolution": resolution, "sorting": sorting, "warnings": warnings}
+            if not sorting["applied"]:
+                return {**_error("SORT_NOT_APPLIED", "无法确认所请求的排序及距离锚点。"),
+                        "location_resolution": resolution, "sorting": sorting, "warnings": warnings}
+            if not state.get("has_list") and not state.get("empty"):
+                return _error("SCRAPING_FAILED", "酒店列表未渲染（可能被拦截或页面结构变化）")
+
+            time.sleep(random.uniform(1.5, 4.0))
+            raw_cards = [] if state.get("empty") else _human_scroll_and_collect(page, int(limit))
+            if raw_cards:
+                collected_state = {**state, "distances": [c.get("distance", "") for c in raw_cards]}
+                resolution = search_state.verify_location(
+                    collected_state, location, city_ids[0], source=source, resolved=resolved)
+                sorting = search_state.verify_sort(collected_state, sort, resolution)
+                if not resolution["applied"] or not sorting["applied"]:
+                    return {**_error("RESULTS_NOT_VERIFIED", "采集结果的地点或排序与请求不一致。"),
+                            "location_resolution": resolution, "sorting": sorting, "warnings": warnings}
+            elif not state.get("empty"):
+                return _error("SCRAPING_FAILED", "列表存在但未读到酒店卡片，无法确认结果。")
+        except Exception as error:
+            logger.warning("酒店查询状态验证失败 (%s)", type(error).__name__)
+            return _error("SEARCH_STATE_UNKNOWN", "无法读取或应用酒店查询状态，请稍后重试。")
+
+        hotels = parse_cards(raw_cards, min_score=min_score)[:int(limit)]
+        common = {"city": city, "location": location, "checkin": checkin, "checkout": checkout,
+                  "count": len(hotels), "hotels": hotels, "warnings": warnings,
+                  "location_resolution": resolution, "sorting": sorting,
+                  "query_time": datetime.now().isoformat(), "data_source": "ctrip_web_scraping",
+                  "rate_limiter": rate_info}
         if not hotels:
-            return {
-                "status": "empty",
-                "message": "未找到符合条件的酒店",
-                "error_code": "EMPTY_RESULTS",
-                "count": 0,
-                "hotels": [],
-                "warnings": warnings,
-                "data_source": "ctrip_web_scraping",
-                "query_time": datetime.now().isoformat(),
-            }
-
+            return {**common, "status": "empty", "message": "未找到符合条件的酒店", "error_code": "EMPTY_RESULTS"}
         if len(hotels) < int(limit):
             warnings.append(f"仅返回 {len(hotels)} 家（列表加载到底或筛选后不足）")
-
-        formatted = _format_output(hotels, city, checkin, checkout, location)
-        formatted += "\n\n🧾 数据源: ctrip_web_scraping"
-
-        return {
-            "status": "success",
-            "city": city,
-            "location": location,
-            "checkin": checkin,
-            "checkout": checkout,
-            "count": len(hotels),
-            "hotels": hotels,
-            "warnings": warnings,
-            "formatted_output": formatted,
-            "query_time": datetime.now().isoformat(),
-            "data_source": "ctrip_web_scraping",
-            "rate_limiter": rate_info,
-        }
+        formatted = _format_output(hotels, city, checkin, checkout, resolution["resolved_name"] or location)
+        return {**common, "status": "success",
+                "formatted_output": formatted + "\n\n🧾 数据源: ctrip_web_scraping"}

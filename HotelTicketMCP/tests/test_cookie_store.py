@@ -57,3 +57,32 @@ def test_save_writes_utf8(tmp_path):
     path = cookie_store.save_cookies(SAMPLE, tmp_path / "c.json")
     data = json.loads(path.read_text(encoding="utf-8"))
     assert "cookies" in data and "saved_at" in data
+
+
+def test_expiry_session_samesite_and_partition_roundtrip(tmp_path):
+    cookies = [
+        {"name": "persistent", "value": "x", "sameSite": "lax", "expires": 200, "secure": True},
+        {"name": "expired", "value": "x", "expires": 99},
+        {"name": "session", "value": "x", "session": True, "expires": -1, "sameSite": "Strict"},
+        {"name": "partitioned", "value": "x", "secure": True, "sameSite": "None",
+         "partitionKey": {"topLevelSite": "https://ctrip.com", "hasCrossSiteAncestor": False}},
+    ]
+    cookie_store.save_cookies(cookies, tmp_path / "cookies.json")
+    result = cookie_store.to_injectable(cookie_store.load_cookies(tmp_path / "cookies.json"), now=100)
+    assert [c["name"] for c in result] == ["persistent", "session", "partitioned"]
+    assert result[0]["expires"] == 200 and result[0]["sameSite"] == "Lax"
+    assert "expires" not in result[1]
+    assert result[2]["partitionKey"] == cookies[-1]["partitionKey"]
+
+
+def test_invalid_and_unrelated_cookies_are_not_injected():
+    assert cookie_store.to_injectable([None, {"name": "missing"},
+        {"name": "bad", "value": "x", "domain": "evilctrip.com"},
+        {"name": "bad", "value": "x", "partitionKeyOpaque": True},
+        {"name": "bad", "value": "x", "sameSite": "invalid"}]) == []
+
+
+def test_legacy_list_cookie_file(tmp_path):
+    path = tmp_path / "legacy.json"
+    path.write_text(json.dumps(SAMPLE), encoding="utf-8")
+    assert len(cookie_store.to_injectable(cookie_store.load_cookies(path))) == 3

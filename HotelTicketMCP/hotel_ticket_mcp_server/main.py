@@ -56,7 +56,8 @@ load_env_file()
 
 from .utils.browser_runtime import browser_lifespan, install_shutdown_handlers, shutdown_browsers
 from fastmcp import FastMCP, Context  # noqa: E402
-from typing import Literal
+from typing import Literal, Annotated
+from pydantic import Field
 
 from .tools import hotel_login_tools, hotel_search_tools  # noqa: E402
 
@@ -108,38 +109,34 @@ def setup_logging():
 def register_tools():
     @mcp.tool()
     def searchHotels(
-        city: str,
-        checkin: str,
-        checkout: str,
-        location: str = None,
-        adults: int = 2,
-        children: int = 0,
-        rooms: int = 1,
-        price_min: int = None,
-        price_max: int = None,
-        star_min: int = None,
-        star_max: int = None,
-        min_score: float = None,
-        room_type: str = None,
-        accommodation_type: str = None,
-        breakfast: str = None,
-        sort: str = "smart",
-        limit: int = 20,
+        city: Annotated[str, Field(min_length=1, description="城市名称，例如武汉；不填写地标")],
+        checkin: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="入住日期 YYYY-MM-DD，不早于今天")],
+        checkout: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$", description="退房日期 YYYY-MM-DD，晚于入住")],
+        location: Annotated[str | None, Field(description="城市内的地标全名；同名时附加线路或出口，例如梨园地铁站")] = None,
+        adults: Annotated[int, Field(ge=1, description="成人人数")] = 2,
+        children: Annotated[int, Field(ge=0, description="儿童人数")] = 0,
+        rooms: Annotated[int, Field(ge=1, description="房间数")] = 1,
+        price_min: Annotated[int | None, Field(ge=0, description="每晚人民币最低价")] = None,
+        price_max: Annotated[int | None, Field(ge=0, description="每晚人民币最高价")] = None,
+        star_min: Annotated[int | None, Field(ge=1, le=5, description="最低星级")] = None,
+        star_max: Annotated[int | None, Field(ge=1, le=5, description="最高星级")] = None,
+        min_score: Annotated[float | None, Field(ge=0, le=5, description="最低评分，采集后过滤；评分未知的酒店保留并返回空评分")] = None,
+        room_type: Annotated[
+            Literal["大床房", "双床房", "单人床房", "三床房", "特大床房"] | None,
+            Field(description="房型筛选，单选；省略或 null 表示不限"),
+        ] = None,
+        accommodation_type: Annotated[
+            Literal["酒店", "民宿", "青年旅馆", "酒店公寓", "公寓"] | None,
+            Field(description="住宿类型筛选，单选；省略或 null 表示不限"),
+        ] = None,
+        breakfast: Annotated[str | None, Field(description="暂不支持早餐筛选，传值会返回未应用警告")] = None,
+        sort: Literal["smart", "price_asc", "distance", "score_desc"] = "smart",
+        limit: Annotated[int, Field(ge=1, le=50, description="最多返回的酒店数")] = 20,
     ):
-        """携程酒店搜索 - 按城市、入住/退房日期等条件抓取酒店列表。
-
-        ⚠ 风险提示：本工具通过浏览器模拟真人浏览并抓取需要登录态的携程酒店数据，
-        存在账号被封禁风险。使用前必须在安装时同意风险条款（HOTEL_MCP_CONSENT=yes）。
-
-        参数：
-        city: 城市名（如"武汉"）；checkin/checkout: YYYY-MM-DD；
-        location: 地标/商圈（如"武汉站-东出口"）；adults/children/rooms: 人数与房间数；
-        price_min/price_max: 价格区间；star_min/star_max: 星级区间；
-        min_score: 最低评分（客户端过滤）；room_type: 双床房/大床房等；
-        accommodation_type: 酒店/民宿/青年旅馆；breakfast: 无/单早/双早；
-        sort: smart(默认智能排序)/price_asc(低价优先)/distance(直线距离)/score_desc(好评优先)；
-        limit: 返回数量（默认20，最大50）。
-        搜索之间自动等待随机 30s~5min 间隔（防封禁）。
+        """按城市和日期搜索携程酒店，返回实际地点与排序应用状态。
+        需要登录及 HOTEL_MCP_CONSENT=yes；查询间自动等待随机 15 秒至 3 分钟。
+        location 使用城市内的地点全名，distance 排序必须有 location。
+        调用 get_tool_details({tool_name: "hotel_ctrip_searchHotels"}) 查看参数、示例及错误处理。
         """
         return hotel_search_tools.searchHotels(
             city=city,

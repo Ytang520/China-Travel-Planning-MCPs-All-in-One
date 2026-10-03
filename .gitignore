@@ -27,6 +27,9 @@ logs/
 FlightTicketMCP/logs/
 *.log
 
+# Local browser profiles and scrape working files. Published examples in cases/ stay tracked.
+output/
+
 # Test & debug artifacts
 test_ctrip*.py
 ctrip_time_filter_test.py

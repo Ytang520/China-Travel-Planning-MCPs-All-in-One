@@ -40,6 +40,36 @@ node scripts/mcp-test.mjs login --login-action=cancel
 
 浏览器回归测试使用独立临时 profile 和模拟 cookie。设置 `HOTEL_MCP_RUN_EDGE_TESTS=1` 后运行 `HotelTicketMCP/tests/test_login_edge.py` 可验证真实 Edge 的上下文失效、关闭标签页和连接中断；页面响应由本地 CDP 拦截提供，不执行真实账号登录。
 
+## Edge 登录后在 Chrome 复用
+
+酒店 provider 支持向项目管理的 Edge 或 Chrome 注入项目 Cookie 文件。登录成功后保存的 Cookie 保留 HttpOnly、Secure、SameSite、路径、有效期和可恢复的分区信息；会话 Cookie 不会被改成永久 Cookie，过期或无法恢复的 Cookie 不注入。旧版 Cookie 列表和 `cookies` 包装格式仍可读取。
+
+两种浏览器使用各自独立的 `HOTEL_MCP_PROFILE_DIR`，并使用同一个明确指定的 `HOTEL_MCP_COOKIE_FILE`。例如 Edge 设置 `HOTEL_MCP_BROWSER=edge`、profile 为 `HotelTicketMCP/.browser-profile-edge`；Chrome 设置 `HOTEL_MCP_BROWSER=chrome`、profile 为 `HotelTicketMCP/.browser-profile-chrome`。这些路径建议在宿主配置中使用绝对路径。浏览器发现可能回退，因此需要严格使用 Chrome 时应把 `HOTEL_MCP_BROWSER_PATH` 设为安装的 `chrome.exe`。
+
+复用通过保存的项目 Cookie 完成，不读取或迁移个人 Edge/Chrome 默认 profile。能否恢复当前账号由导航后的官方酒店页面登录状态决定，不能以注入未报错作为成功依据；失效则沿用 `LOGIN_REQUIRED` 流程。
+
+`HOTEL_MCP_RUN_COOKIE_TRANSFER=1` 启用 `HotelTicketMCP/tests/test_cookie_transfer.py` 的独立 Edge→Chrome 属性测试。`HOTEL_MCP_RUN_LOCATION_LIVE=1` 启用 `test_location_live.py` 的实际携程登录复用测试；该测试使用现有项目凭据、独立临时 profile 和临时 Cookie 文件，并检查实际启动的浏览器身份。
+
+## Chrome 登录与复用验收
+
+在用户明确要求打开登录页后，从仓库根目录运行：
+
+```powershell
+uv run --no-project --python .venv/Scripts/python.exe python -u scripts/hotel-session-check.py --login-action=open_login
+```
+
+脚本打开全新的 Chrome，由用户在携程页面完成登录，然后验证 Cookie 写入、Chrome 新会话复用、Chrome → Edge 复用及 Edge → Chrome 回传复用。每个浏览器启动时检查实际身份及初始携程 Cookie 数量；每次复用必须确认酒店登录态并读到酒店卡片。测试浏览器关闭后删除其独立临时 profile。
+
+登录 Cookie 保留在 `.validation/chrome-session-<时间与标识>/chrome-cookies.json`，Edge 导出的 Cookie 保留在同目录的 `edge-cookies.json`。这些文件被 Git 忽略。`report.json` 记录各项结果、浏览器身份、Cookie 数量和清理状态，不含 Cookie 值、账号或密码。脚本会检查 Chrome 原始 Cookie 文件在复用测试期间未被改写。
+
+已有该测试保存的 Cookie 时，可以仅重跑复用检查：
+
+```powershell
+uv run --no-project --python .venv/Scripts/python.exe python -u scripts/hotel-session-check.py --reuse-only --cookie-file "<已保存的 chrome-cookies.json 的绝对路径>"
+```
+
+后续普通酒店查询可将 `HOTEL_MCP_COOKIE_FILE` 指向该文件。Cookie 是否仍有效由携程页面确认；失效时按原登录流程处理。
+
 ## English client contract
 
 On `LOGIN_REQUIRED`, preserve the original query and call `hotel_ctrip_login` with `next_arguments`. The gateway uses native form elicitation when available. On `USER_INTERACTION_REQUIRED`, actually invoke the host's question/input tool and wait for an answer. Only then pass `user_action: "open_login"` or `"cancel"`; preserve `return_url`. Never request account credentials in chat. Retry the original query exactly once after successful login.

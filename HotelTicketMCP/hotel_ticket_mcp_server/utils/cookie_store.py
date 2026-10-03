@@ -7,6 +7,9 @@ cookie 保存在 gitignored 的文件中（默认 HotelTicketMCP/ctrip-hotel-coo
 import json
 import os
 import tempfile
+import time
+import math
+from urllib.parse import urlsplit
 from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
@@ -63,18 +66,52 @@ def save_cookies(cookies, path=None, *, commit_lock=None, cancelled=None):
     return p
 
 
-def to_injectable(cookies):
-    """cookie dict 列表 → DrissionPage set.cookies 可接受的格式（含 httpOnly/secure）。"""
+def to_injectable(cookies, *, now=None):
+    """Map stored CDP cookies without losing scope, SameSite or session semantics."""
+    now = time.time() if now is None else now
     out = []
     for c in cookies:
-        out.append(
-            {
-                "name": c["name"],
-                "value": c["value"],
-                "domain": c.get("domain") or ".ctrip.com",
-                "path": c.get("path") or "/",
-                "httpOnly": bool(c.get("httpOnly")),
-                "secure": bool(c.get("secure")),
-            }
-        )
+        if not isinstance(c, dict) or not isinstance(c.get("name"), str) or not c["name"] or not isinstance(c.get("value"), str):
+            continue
+        domain = c.get("domain") or ".ctrip.com"
+        if not isinstance(domain, str) or not (domain.lstrip(".") == "ctrip.com" or domain.endswith(".ctrip.com")):
+            continue
+        cookie = {"name": c["name"], "value": c["value"], "domain": domain,
+                  "path": c.get("path") or "/", "httpOnly": bool(c.get("httpOnly")),
+                  "secure": bool(c.get("secure"))}
+        if not isinstance(cookie["path"], str) or not cookie["path"].startswith("/"):
+            continue
+        expires = c.get("expires", c.get("expirationDate"))
+        if c.get("session") is not True and expires not in (None, -1):
+            if isinstance(expires, bool) or not isinstance(expires, (int, float)) or not math.isfinite(expires) or expires <= now:
+                continue
+            cookie["expires"] = expires
+        same_site = c.get("sameSite")
+        if same_site is not None:
+            normalized = {"strict": "Strict", "lax": "Lax", "none": "None", "no_restriction": "None", "unspecified": None}.get(str(same_site).lower())
+            if normalized is None and str(same_site).lower() != "unspecified":
+                continue
+            if normalized:
+                cookie["sameSite"] = normalized
+        if c.get("partitionKeyOpaque"):
+            # An opaque partition cannot be reconstructed in another browser.
+            continue
+        if "partitionKey" in c:
+            partition = c["partitionKey"]
+            if not isinstance(partition, dict):
+                continue
+            site = partition.get("topLevelSite", "")
+            try:
+                valid_site = urlsplit(site).scheme in ("https", "http") and bool(urlsplit(site).hostname)
+            except ValueError:
+                valid_site = False
+            if not valid_site or not isinstance(partition.get("hasCrossSiteAncestor"), bool):
+                continue
+            cookie["partitionKey"] = {"topLevelSite": site, "hasCrossSiteAncestor": partition["hasCrossSiteAncestor"]}
+        for key, values in (("priority", ("Low", "Medium", "High")), ("sourceScheme", ("Unset", "NonSecure", "Secure"))):
+            if c.get(key) in values:
+                cookie[key] = c[key]
+        if isinstance(c.get("sourcePort"), int) and -1 <= c["sourcePort"] <= 65535:
+            cookie["sourcePort"] = c["sourcePort"]
+        out.append(cookie)
     return out

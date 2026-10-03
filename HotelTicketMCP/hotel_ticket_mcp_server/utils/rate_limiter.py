@@ -1,7 +1,7 @@
-"""搜索间隔限速：两次搜索之间等待随机 30~300 秒（首次不等待）。
+"""搜索间隔限速：两次搜索之间等待随机 15~180 秒（首次不等待）。
 
 防封设计：酒店搜索需要登录态，频繁搜索有账号封禁风险，
-因此每次搜索前等待一个随机间隔（默认 30s~5min，可用环境变量调整）。
+因此每次搜索前等待一个随机间隔（默认 15s~3min，可用环境变量调整）。
 """
 
 import logging
@@ -12,8 +12,8 @@ import time
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_DELAY = 30.0
-DEFAULT_MAX_DELAY = 300.0
+DEFAULT_MIN_DELAY = 15.0
+DEFAULT_MAX_DELAY = 180.0
 
 
 def _env_float(name, default):
@@ -56,7 +56,7 @@ class SearchRateLimiter:
             if (self.min_delay, self.max_delay) != original:
                 logger.warning(
                     "延迟配置已钳制: (%s, %s) -> (%.0f, %.0f)，"
-                    "请检查 HOTEL_MCP_MIN_DELAY/HOTEL_MCP_MAX_DELAY（默认 30~300）",
+                    "请检查 HOTEL_MCP_MIN_DELAY/HOTEL_MCP_MAX_DELAY（默认 15~180）",
                     original[0], original[1], self.min_delay, self.max_delay,
                 )
         elif self.min_delay < 0 or self.max_delay < self.min_delay:

@@ -63,11 +63,7 @@ def verification_url(return_url=None):
 def _extract_cookies(page):
     result = page.run_cdp("Network.getAllCookies")
     raw = result.get("cookies", []) if isinstance(result, dict) else []
-    return [{"name": c["name"], "value": c.get("value", ""), "domain": c["domain"],
-             "path": c.get("path", "/"), "httpOnly": bool(c.get("httpOnly")),
-             "secure": bool(c.get("secure"))} for c in raw
-            if c.get("name") and (c.get("domain", "").lstrip(".") == "ctrip.com"
-                                  or c.get("domain", "").endswith(".ctrip.com"))]
+    return cookie_store.to_injectable(raw)
 
 
 class LoginControl:

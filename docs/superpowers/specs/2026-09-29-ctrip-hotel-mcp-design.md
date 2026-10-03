@@ -55,7 +55,7 @@ HotelTicketMCP/
 
 ## 5. 防封设计
 
-- **搜索间隔**：进程内 `random.uniform(30, 300)` 秒（首次不等待；`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；仅酒店，flight 不动。
+- **搜索间隔**：进程内 `random.uniform(15, 180)` 秒（首次不等待；`HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 可调）；仅酒店，flight 不动。
 - **人性化滚动**：步幅 = 视口 × uniform(0.55, 0.9) ± 10% jitter，下限 0.45 视口（防止步幅过小→数据不更新→误判到底）；轮间 uniform(0.8, 2.2)s；每 3~5 轮 30% 概率回滚 0.2~0.4 视口；判底 = bottom_gap ≤ 15% 视口且连续 3 轮 scrollHeight 与卡片数双指标零增长；到底但不足 limit → 返回已有 + warning。
 - 随机鼠标移动（30% 概率）、首屏随机停驻 uniform(1.5, 4)s、最小化窗口 + 防节流三件套（`--start-minimized`、`--disable-backgrounding-occluded-windows`、`--disable-renderer-backgrounding`、`--disable-background-timer-throttling`，同 flight）。
 - **按次开关浏览器 + 单飞锁**：每次搜索/登录用完即关（`browser_session` 上下文管理器，finally 必关）；同进程一次只一个浏览器操作；启动前按 profile 路径过滤 CommandLine 精确清理自身残留 msedge 进程（不碰用户浏览器）。

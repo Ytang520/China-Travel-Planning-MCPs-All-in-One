@@ -25,7 +25,7 @@ HotelTicketMCP/
 │  ├─ tools/hotel_search_tools.py                # searchHotels 全流程
 │  ├─ tools/hotel_login_tools.py                 # ctripHotelLogin
 │  └─ utils/
-│     ├─ rate_limiter.py      # 30~300s 随机间隔（纯逻辑）
+│     ├─ rate_limiter.py      # 15~180s 随机间隔（纯逻辑）
 │     ├─ cookie_store.py      # cookie 文件读写/注入映射（纯逻辑）
 │     ├─ cities_dict.py       # 城市/地标字典（纯逻辑）
 │     ├─ url_builder.py       # 参数→URL（纯逻辑）
@@ -49,7 +49,7 @@ scripts/mcp-test.mjs, .env.example, .gitignore, README{,.en}.md, docs/{extending
 
 - [ ] **Step 1: 写 pyproject.toml**（name=hotel-ticket-mcp-server, requires-python>=3.11, deps: fastmcp>=2.8.0, DrissionPage>=4.0.0, pydantic>=2.0.0, requests>=2.31.0）
 - [ ] **Step 2: 写 requirements.txt**（同上 4 个依赖）
-- [ ] **Step 3: 写 .env.example**：MCP_TRANSPORT/日志变量 + HOTEL_MCP_BROWSER=edge、HOTEL_MCP_BROWSER_PATH（注释）、HOTEL_MCP_HEADLESS（注释，默认不启用）、HOTEL_MCP_MIN_DELAY=30、HOTEL_MCP_MAX_DELAY=300、HOTEL_MCP_CONSENT=no（注释说明风险）
+- [ ] **Step 3: 写 .env.example**：MCP_TRANSPORT/日志变量 + HOTEL_MCP_BROWSER=edge、HOTEL_MCP_BROWSER_PATH（注释）、HOTEL_MCP_HEADLESS（注释，默认不启用）、HOTEL_MCP_MIN_DELAY=15、HOTEL_MCP_MAX_DELAY=180、HOTEL_MCP_CONSENT=no（注释说明风险）
 - [ ] **Step 4: 写 main.py**（镜像 FlightTicketMCP/main.py：load_env_file→get_transport_config→setup_logging（logs/ 在 HotelTicketMCP/logs/）→register_tools→mcp.run()；工具注册 searchHotels 与 ctripHotelLogin，consent gate 在工具内实现）
 - [ ] **Step 5: 写 __init__.py / __main__.py**（`from .main import main; main()`）
 - [ ] **Step 6: 建 venv 并装依赖**
@@ -67,13 +67,13 @@ scripts/mcp-test.mjs, .env.example, .gitignore, README{,.en}.md, docs/{extending
 
 ```python
 # rate_limiter.py
-"""搜索间隔限速：两次搜索之间等待随机 30~300 秒（首次不等待）。"""
+"""搜索间隔限速：两次搜索之间等待随机 15~180 秒（首次不等待）。"""
 import os
 import random
 import time
 
-DEFAULT_MIN_DELAY = 30.0
-DEFAULT_MAX_DELAY = 300.0
+DEFAULT_MIN_DELAY = 15.0
+DEFAULT_MAX_DELAY = 180.0
 
 
 class SearchRateLimiter:

@@ -1,6 +1,7 @@
 from urllib.parse import parse_qs, unquote, urlparse
 
 from hotel_ticket_mcp_server.utils.url_builder import build_list_url
+from hotel_ticket_mcp_server.utils.cities_dict import get_landmark
 
 WUHAN = (477, 20, 1)
 
@@ -32,7 +33,7 @@ def test_landmark_url():
         "2026-10-01",
         "2026-10-03",
         landmark="武汉站-东出口",
-        landmark_code=("10", "13306087", "30.6076444|114.4256694"),
+        resolved_location=get_landmark(477, "武汉站-东出口"),
     )
     params = qs(result["url"])
     assert params["searchType"] == ["T"]
@@ -56,9 +57,9 @@ def test_filters_price_star_room():
     )
     filters = qs(result["url"])["listFilters"][0].split(",")
     assert "15~Range*15*250~400" in filters
-    assert "17~3*17*3" in filters
-    assert "29~1*29*1~2*2" in filters
+    assert "16~3*16*3" in filters
     assert "4~2*4*2" in filters
+    assert "75~TAG_495*75*495" in filters
 
 
 def test_unknown_room_type_warns_and_skips():
@@ -70,5 +71,25 @@ def test_unknown_room_type_warns_and_skips():
 def test_sort_mapping():
     assert "sort" not in qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", sort="smart")["url"])
     assert qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", sort="price_asc")["url"])["sort"] == ["S"]
-    assert qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", sort="distance")["url"])["sort"] == ["D"]
+    assert "sort" not in qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", sort="distance")["url"])
     assert qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", sort="score_desc")["url"])["sort"] == ["R"]
+
+
+def test_keyword_city_fields_and_single_encoding():
+    name = "梨园 & 公园%入口"
+    params = qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", landmark=name)["url"])
+    assert params["cityName"] == params["destName"] == ["武汉"]
+    assert params["searchWord"] == [name]
+    assert not {"searchValue", "optionId", "searchType"}.intersection(params)
+
+
+def test_resolved_metro_preserves_outer_type_and_original_filters():
+    from hotel_ticket_mcp_server.utils.location_cache import ResolvedLocation
+    metro = ResolvedLocation("477", "梨园地铁站", "MT", "11|16764*11*30.5747097|114.3706248|梨园地铁站|16764", "16764", "11")
+    params = qs(build_list_url("武汉", WUHAN, "2026-10-01", "2026-10-03", resolved_location=metro,
+                               adults=3, rooms=2, price_min=200, price_max=400)["url"])
+    assert params["searchType"] == ["MT"]
+    assert params["optionId"] == ["16764"]
+    assert params["searchValue"] == [metro.search_value]
+    assert params["adult"] == ["3"] and params["crn"] == ["2"]
+    assert params["listFilters"] == ["15~Range*15*200~400"]

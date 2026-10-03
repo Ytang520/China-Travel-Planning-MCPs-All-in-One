@@ -26,7 +26,7 @@ clock = FakeClock()
 sleep = FakeSleep()
 
 
-def make_limiter(min_delay=30.0, max_delay=300.0, seed=0):
+def make_limiter(min_delay=15.0, max_delay=180.0, seed=0):
     return SearchRateLimiter(
         min_delay=min_delay,
         max_delay=max_delay,
@@ -56,7 +56,7 @@ def test_second_search_waits_random_delay():
     limiter.wait_if_needed()
     clock.now += 5  # 5s since first search
     result = limiter.wait_if_needed()
-    expected = random.Random(0).uniform(30.0, 300.0)
+    expected = random.Random(0).uniform(15.0, 180.0)
     assert result["reason"] == "rate_limit"
     assert result["delay_seconds"] == pytest.approx(expected)
     assert result["waited_seconds"] == pytest.approx(max(0.0, expected - 5))

@@ -67,6 +67,21 @@ export const validateSearchResult = (mode, result, expected) => {
       time.test(record["出发时间"]) && time.test(record["到达时间"]));
     if (!meaningful) throw new Error("A flight has an invalid flight number or departure/arrival times");
   } else {
+    if (expected.location) {
+      const location = data.location_resolution;
+      if (!location?.applied || location.status !== "applied" || location.requested !== expected.location ||
+          !location.resolved_name || !location.evidence ||
+          ![...(location.evidence.selected_locations ?? []), ...(location.evidence.distance_anchors ?? [])].includes(location.resolved_name)) {
+        throw new Error("Hotel location was not verified on the page");
+      }
+    }
+    if (expected.sort) {
+      if (!data.sorting?.applied || data.sorting.actual !== expected.sort || data.sorting.requested !== expected.sort ||
+          (expected.sort === "distance" && (!expected.location || data.sorting.anchor !== data.location_resolution?.resolved_name ||
+            !data.location_resolution?.evidence?.distance_anchors?.includes(data.sorting.anchor)))) {
+        throw new Error("Hotel sorting or distance anchor was not verified");
+      }
+    }
     if (count > expected.limit || records.some((record) =>
       !record || typeof record.name !== "string" || !record.name.trim())) {
       throw new Error("Invalid hotel names or result limit");

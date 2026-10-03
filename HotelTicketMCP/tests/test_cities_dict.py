@@ -14,8 +14,9 @@ def test_unknown_city():
 
 
 def test_known_landmark():
-    assert get_landmark("武汉站-东出口") == ("10", "13306087", "30.6076444|114.4256694")
+    assert get_landmark(477, "武汉站-东出口").option_id == "13306087"
+    assert get_landmark(1, "武汉站-东出口") is None
 
 
 def test_unknown_landmark():
-    assert get_landmark("不存在的出口") is None
+    assert get_landmark(477, "不存在的出口") is None

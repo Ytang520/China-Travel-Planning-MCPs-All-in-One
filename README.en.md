@@ -13,7 +13,16 @@ English README for **[出行 MCP 统一网关](README.md)** — a single **stdio
 - **Single gateway**: Run **one** MCP server process and reach train ticketing (12306), flights (FlightTicketMCP), hotels (HotelTicketMCP), maps (Amap MCP), and DiDi fare tools—fewer processes and configs for desktop hosts such as Cursor, Claude Code, or OpenCode.
 - **Easy extension**: Downstream integrations register under fixed domains via each domain’s `registry.ts`; add providers under `src/domains/` (see [docs/extending.md](docs/extending.md)).
 - **Troubleshooting guidance**: The [error-processing skill template](skill-templates/error-processing/SKILL.md) supports OpenCode, Claude Code, and Cursor. The agent uses error context and the [reference index](skill-templates/error-processing/mcp-error-references.json) to select public documentation and produce structured troubleshooting advice.
-- **No source reading required**: the gateway ships `gateway_get_config` (redacted runtime config), `gateway_health_check` (per-domain light probes), and `gateway_list_retained_tools` (with parameter summaries) so agents can inspect capabilities without reading source code.
+- **No source reading required**: discover names with `gateway_list_retained_tools`, then call `get_tool_details({"tool_name":"hotel_ctrip_searchHotels"})` for one tool's original schema, semantics, examples, and errors. `gateway_get_config` provides redacted configuration and `gateway_health_check` runs lightweight probes. See the [tool reference](docs/tool-reference.md).
+
+## Example cases
+
+[cases](cases/) holds two real runs (write-ups in Chinese), covering install cost and one hotel-collection result:
+
+| Case | What it shows |
+| --- | --- |
+| [Install the gateway](cases/01-安装-mcp.md) | Token count, cost, and time for the same model with and without the post-install functional tests |
+| [Wuhan hotels: East Lake and Wuhan University, within 8 metro stops](cases/02-武汉酒店-东湖与武大.md) | Hotels collected by metro station; workbook [武汉酒店_东湖与武大8站内_20261003.xlsx](cases/武汉酒店_东湖与武大8站内_20261003.xlsx) |
 
 ## Let an agent install it
 
@@ -79,7 +88,7 @@ node scripts/mcp-test.mjs config
 | `HOTEL_MCP_BROWSER` | Browser engine for hotel scraping: `edge` (default) / `chrome` (same as flight) |
 | `HOTEL_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `HOTEL_MCP_BROWSER`) |
 | `HOTEL_MCP_CONSENT` | ⚠ Risk-consent switch for hotel search: tools only work with `yes` (see "Hotel search risk notice") |
-| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | Optional random interval between hotel searches, in seconds (default 30~300) |
+| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | Optional random interval between hotel searches, in seconds (default 15~180) |
 | `HOTEL_MCP_COOKIE_FILE` | Optional cookie file location (default `HotelTicketMCP/ctrip-hotel-cookies.json`, gitignored) |
 | `HOTEL_MCP_LOGIN_TIMEOUT` | Optional login wait in seconds, 1–840, default 840 |
 | `HOTEL_MCP_PROFILE_DIR` | Optional isolated hotel browser profile directory |
@@ -106,14 +115,14 @@ Ctrip (flights.ctrip.com) uses a whaleguard anti-bot WAF that blocks headless br
 Hotel search drives a real browser that mimics human browsing and scrapes login-gated Ctrip hotel data. **This carries a risk of account bans**:
 
 - Hotel tools are only enabled after explicit consent at install time (`HOTEL_MCP_CONSENT=yes`); **enabling means you accept the risk voluntarily, and the author takes no responsibility**;
-- To reduce risk, searches wait a random 30 s – 5 min interval between calls (tunable via `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY`) and scroll with randomized steps and pauses;
+- To reduce risk, searches wait a random 15 s – 3 min interval between calls (tunable via `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY`) and scroll with randomized steps and pauses;
 - Flight search is unaffected by hotel login state (independent fresh profile) and does not gain this rate limit.
 
 ### Direct and transfer routes
 
 - Train: **direct** (`train_12306_get_tickets`) and **interline/transfer** (`train_12306_get_interline_tickets`, currently the first ten results; the 12306 interline path was fixed after the upstream site rework). Station-code lookup and `train_12306_get_train_route_stations` are also retained;
 - Flight: **route search is direct only**. `getTransferFlightsByThreePlace` uses an unstable scraping chain and is hidden. Weather and OpenSky live-position tools remain available; see "Flight search" below;
-- Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, guest counts, price/star/score/room-type/accommodation/breakfast filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`). `limit` defaults to 20 and caps at 50. `hotel_ctrip_login` establishes the login state. See "Hotel search risk notice" above.
+- Hotel: `hotel_ctrip_searchHotels` supports city/landmark, dates, occupancy, price/star/score filters, and sorting (`smart`/`price_asc`/`distance`/`score_desc`). `room_type` accepts one of 大床房, 双床房, 单人床房, 三床房, 特大床房; `accommodation_type` accepts one of 酒店, 民宿, 青年旅馆, 酒店公寓, 公寓. Omit a value or pass `null` for no filter; any other value is rejected. Breakfast is unsupported and returns an unapplied-filter warning. If the page does not select the requested room or accommodation filter, the provider returns `QUERY_NOT_APPLIED`. Use `city: "武汉"`, `location: "梨园地铁站"`. Distance sorting requires a location; `location_resolution` and `sorting` report page evidence. `limit` defaults to 20 and caps at 50. `hotel_ctrip_login` establishes login. See the [tool reference](docs/tool-reference.md).
 
 ### Live browser checks after installation
 
@@ -190,7 +199,7 @@ Flight routes default to **`auto`** (equivalent to `default`): scraping **Ctrip*
 
 ### Hotel search
 
-Hotel search uses `hotel_ctrip_searchHotels` to scrape Ctrip hotel listings: a Ctrip login is required (see "Hotel search risk notice"), the browser opens minimized by default, and scroll collection uses randomized steps and pauses; searches wait a random 30 s – 5 min interval between calls. A query takes roughly 1–2 minutes (excluding the rate-limit wait).
+Hotel search uses `hotel_ctrip_searchHotels` to scrape Ctrip hotel listings: a Ctrip login is required (see "Hotel search risk notice"), the browser opens minimized by default, and scroll collection uses randomized steps and pauses; searches wait a random 15 s – 3 min interval between calls. A query takes roughly 1–2 minutes (excluding the rate-limit wait).
 
 ### Gateway MCP Server and model context
 

@@ -58,9 +58,14 @@ CITY_IDS = {
     "徐州": (54, 10, 1),
 }
 
-# 地标 → (searchType, landmarkId, "lat|lng")
+from .location_cache import ResolvedLocation, normalize_name
+
+# Seeds are scoped by provider city ID and must still be verified on the page.
 LANDMARKS = {
-    "武汉站-东出口": ("10", "13306087", "30.6076444|114.4256694"),
+    ("477", "武汉站-东出口"): ResolvedLocation(
+        "477", "武汉站-东出口", "T",
+        "10|13306087*10*30.6076444|114.4256694|武汉站-东出口|13306087",
+        "13306087", "10"),
 }
 
 
@@ -69,6 +74,6 @@ def get_city_ids(city):
     return CITY_IDS.get((city or "").strip())
 
 
-def get_landmark(word):
-    """按地标名返回 (searchType, landmarkId, latlng)，未知返回 None。"""
-    return LANDMARKS.get((word or "").strip())
+def get_landmark(city_id, word):
+    """返回城市内的已知种子；禁止跨城市按名称复用。"""
+    return LANDMARKS.get((str(city_id), normalize_name(word)))

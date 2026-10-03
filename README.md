@@ -13,7 +13,16 @@
 - **统一网关**：客户端只需拉起一个stdio MCP 进程，即可使用火车票务（12306）、航班（FlightTicketMCP）、酒店（HotelTicketMCP）、地图（高德官方 MCP）与网约车费用预估（滴滴）等能力，降低agent 负担。
 - **易于扩展**：下游能力按固定域划分并在各域 `registry.ts` 注册；新增 provider 时遵循 `src/domains/` 约定即可（详见 [docs/extending.zh.md](docs/extending.zh.md)）。
 - **排障辅助**：提供适用于 OpenCode、Claude Code 与 Cursor 的 [error-processing skill 模板](skill-templates/error-processing/SKILL.md)。Agent 根据错误上下文及 [参考索引](skill-templates/error-processing/mcp-error-references.json) 选择公开资料，输出结构化排障建议。
-- **免读源码**：网关内置 `gateway_get_config`（脱敏运行态配置）、`gateway_health_check`（按域轻量探测）、`gateway_list_retained_tools`（含工具参数摘要），代理无需读源码即可了解能力与参数。
+- **免读源码**：`gateway_list_retained_tools` 发现工具；`get_tool_details({"tool_name":"hotel_ctrip_searchHotels"})` 按需返回单工具的原始 schema、参数语义、示例和错误处理。另有 `gateway_get_config`（脱敏配置）和 `gateway_health_check`（轻量探测）。见[工具参考](docs/tool-reference.md)。
+
+## 使用案例
+
+[cases](cases/) 里是两次真实使用记录，用来看安装成本和一次酒店收集的结果：
+
+| 案例 | 内容 |
+| --- | --- |
+| [安装网关](cases/01-安装-mcp.md) | 同一模型下，做与不做部署后功能测试的 token、费用和耗时 |
+| [武汉酒店：东湖与武汉大学 8 站内](cases/02-武汉酒店-东湖与武大.md) | 沿地铁站收集酒店；结果表 [武汉酒店_东湖与武大8站内_20261003.xlsx](cases/武汉酒店_东湖与武大8站内_20261003.xlsx) |
 
 ## 让 Agent 安装
 
@@ -78,7 +87,7 @@ node scripts/mcp-test.mjs config
 | `HOTEL_MCP_BROWSER` | 酒店抓取浏览器内核：`edge`（默认）/ `chrome`（与航班一致） |
 | `HOTEL_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `HOTEL_MCP_BROWSER`） |
 | `HOTEL_MCP_CONSENT` | ⚠ 酒店搜索风险同意开关：`yes` 才启用酒店工具（见下文「酒店搜索风险告知」） |
-| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | 可选，两次酒店搜索之间的随机间隔范围（秒，默认 30~300） |
+| `HOTEL_MCP_MIN_DELAY` / `HOTEL_MCP_MAX_DELAY` | 可选，两次酒店搜索之间的随机间隔范围（秒，默认 15~180） |
 | `HOTEL_MCP_COOKIE_FILE` | 可选，酒店登录 cookie 文件位置（默认 `HotelTicketMCP/ctrip-hotel-cookies.json`，已 gitignore） |
 | `HOTEL_MCP_LOGIN_TIMEOUT` | 可选，登录等待秒数，范围 1–840，默认 840 |
 | `HOTEL_MCP_PROFILE_DIR` | 可选，酒店浏览器独立 profile 目录 |
@@ -105,14 +114,14 @@ node scripts/mcp-test.mjs config
 酒店搜索通过浏览器模拟真人浏览并抓取需要登录态的携程酒店数据，**存在账号被封禁的风险**：
 
 - 安装时必须显式同意风险条款（`HOTEL_MCP_CONSENT=yes`）才会启用酒店工具；**选择启用即表示自愿承担该风险，作者概不负责**；
-- 为降低风险，两次酒店搜索之间自动等待随机 30 秒 ~ 5 分钟（可用 `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 调整），滚动采集采用随机步幅与停顿的人性化行为；
+- 为降低风险，两次酒店搜索之间自动等待随机 15 秒 ~ 3 分钟（可用 `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 调整），滚动采集采用随机步幅与停顿的人性化行为；
 - 航班搜索不受酒店登录态影响（独立临时 profile），也不会加入该限速。
 
 ### 直达与中转说明
 
 - 火车（train）：支持**直达**（`train_12306_get_tickets`）与**中转/联程**（`train_12306_get_interline_tickets`，目前返回前十条；12306 中转接口路径已随上游改版修复），以及车站编码查询和 `train_12306_get_train_route_stations` 经停站查询；
 - 航班（flight）：**路线搜索仅支持直达**。`getTransferFlightsByThreePlace` 抓取链路不稳定，网关已隐藏。天气与 OpenSky 实时位置是另外保留的工具，见下文「航班查询」；
-- 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分/房型/住宿类型/早餐筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`limit` 默认 20、最大 50。`hotel_ctrip_login` 用于建立登录态。详见上文「酒店搜索风险告知」。
+- 酒店（hotel）：`hotel_ctrip_searchHotels` 支持城市/地标、日期、人数、价格/星级/评分筛选与排序（`smart`/`price_asc`/`distance`/`score_desc`），`limit` 默认 20、最大 50。`room_type` 可选单值：大床房、双床房、单人床房、三床房、特大床房；`accommodation_type` 可选单值：酒店、民宿、青年旅馆、酒店公寓、公寓。省略或传 `null` 表示不限，其他值会被拒绝。早餐筛选不支持，传值会返回未应用警告；页面未选中所请求的房型或住宿类型时返回 `QUERY_NOT_APPLIED`。`city` 填武汉，`location` 填梨园地铁站；距离排序必须指定地点，结果通过 `location_resolution` 和 `sorting` 返回页面上的应用证据。`hotel_ctrip_login` 建立登录态。详见[工具参考](docs/tool-reference.md)。
 
 ### 安装后真实查询验收
 
@@ -189,7 +198,7 @@ node scripts/mcp-test.mjs hotel
 
 ### 酒店查询
 
-酒店查询通过 `hotel_ctrip_searchHotels` 抓取携程酒店列表：需要登录态（详见上文「酒店搜索风险告知」），默认以最小化窗口打开浏览器，滚动采集采用随机步幅与停顿；两次搜索之间自动等待随机 30s~5min。查询耗时约 1–2 分钟（不含限速等待）。
+酒店查询通过 `hotel_ctrip_searchHotels` 抓取携程酒店列表：需要登录态（详见上文「酒店搜索风险告知」），默认以最小化窗口打开浏览器，滚动采集采用随机步幅与停顿；两次搜索之间自动等待随机 15s~3min。查询耗时约 1–2 分钟（不含限速等待）。
 
 ### Gateway MCP Server 与模型上下文的关系
 

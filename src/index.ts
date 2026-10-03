@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute, relative, resolve } from "node:path";
 import { PassThrough } from "node:stream";
-import { z } from "zod";
+import { detailsHint, gatewayToolDefinitions, registerToolDetails } from "./utils/toolDetails.js";
 
 import { getRuntimeConfig } from "./config.js";
 import { getFlightProviders } from "./domains/flight/registry.js";
@@ -21,7 +21,6 @@ import {
   connectAndRegisterProvider,
   closeDownstreamClients,
   ProviderInitializationCancelled,
-  createInventorySchema,
   summarizeInputSchema,
 } from "./utils/downstreamClient.js";
 
@@ -132,9 +131,8 @@ const registerInventoryFeatures = (
     "gateway_list_retained_tools",
     {
       title: "List Retained Tools",
-      description:
-        "Return the retained gateway tools grouped by train, flight, hotel, map, and taxi domains, including parameter summaries derived from each tool's input schema.",
-      inputSchema: createInventorySchema(),
+      ...gatewayToolDefinitions.gateway_list_retained_tools,
+      description: `${gatewayToolDefinitions.gateway_list_retained_tools.description} ${detailsHint("gateway_list_retained_tools")}`,
       annotations: {
         readOnlyHint: true,
         idempotentHint: true,
@@ -174,9 +172,8 @@ const registerInventoryFeatures = (
     "gateway_get_config",
     {
       title: "Gateway Runtime Config",
-      description:
-        "Return redacted runtime configuration: provider connectivity, retained tools, browser strategy, entry points, and data-source notes. Secrets are reported only as set/unset.",
-      inputSchema: z.object({}),
+      ...gatewayToolDefinitions.gateway_get_config,
+      description: `${gatewayToolDefinitions.gateway_get_config.description} ${detailsHint("gateway_get_config")}`,
       annotations: {
         readOnlyHint: true,
         idempotentHint: true,
@@ -258,7 +255,7 @@ const registerInventoryFeatures = (
           engine: (env.HOTEL_MCP_BROWSER ?? "edge").toLowerCase(),
           headless: env.HOTEL_MCP_HEADLESS === "1",
           consent: (env.HOTEL_MCP_CONSENT ?? "no").toLowerCase() === "yes" ? "yes" : "no",
-          note: "hotels.ctrip.com requires Ctrip login (guest is redirected to passport); searches are rate-limited by a random 30s-5min interval.",
+          note: "hotels.ctrip.com requires Ctrip login (guest is redirected to passport); searches are rate-limited by a random 15s-3min interval.",
         },
         secrets: {
           AMAP_MAPS_API_KEY: config.amapApiKey ? "set" : "unset",
@@ -266,7 +263,7 @@ const registerInventoryFeatures = (
         },
         dataSourceNotes: [
           "flight: Ctrip web scraping only (visible browser required, 3-8 min per query); flight browser always runs logged-out",
-          "hotel: Ctrip web scraping, login required (HOTEL_MCP_CONSENT=yes to enable); random 30s-5min interval between searches",
+          "hotel: Ctrip web scraping, login required (HOTEL_MCP_CONSENT=yes to enable); random 15s-3min interval between searches",
           "train: 12306 direct + interline tickets (interline uses the lc_search_url-resolved path)",
           "taxi: call taxi_didi_maps_textsearch before taxi_didi_taxi_estimate",
         ],
@@ -283,9 +280,8 @@ const registerInventoryFeatures = (
     "gateway_health_check",
     {
       title: "Gateway Health Check",
-      description:
-        "Run lightweight per-domain probes through the downstream providers (train: current date; map: geocoding; taxi: place search; flight and hotel: connectivity only — no scraping). Returns PASS/FAIL with samples.",
-      inputSchema: createInventorySchema(),
+      ...gatewayToolDefinitions.gateway_health_check,
+      description: `${gatewayToolDefinitions.gateway_health_check.description} ${detailsHint("gateway_health_check")}`,
       annotations: {
         readOnlyHint: true,
       },
@@ -328,7 +324,7 @@ const registerInventoryFeatures = (
             mode: "connectivity-only",
             provider: connection.provider.providerName,
             retainedToolCount: connection.registeredTools.length,
-            note: "hotel search needs Ctrip login (HOTEL_MCP_CONSENT=yes) and a visible browser; searches are rate-limited 30s-5min",
+            note: "hotel search needs Ctrip login (HOTEL_MCP_CONSENT=yes) and a visible browser; searches are rate-limited 15s-3min",
           });
           continue;
         }
@@ -430,6 +426,7 @@ const start = async () => {
 
   if (stopping) return;
   registerInventoryFeatures(inventory, connections);
+  registerToolDetails(server, connections.flatMap((connection) => connection.registeredTools));
   const transport = new StdioServerTransport(gatewayInput);
   await server.connect(transport);
   console.error("[gateway] travel MCP gateway running on stdio");

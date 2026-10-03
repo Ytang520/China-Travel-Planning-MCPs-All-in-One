@@ -175,7 +175,7 @@ question: "是否启用携程酒店搜索（hotel 域）？⚠ 该功能通过�
 options:
   - "启用，我自愿承担风险" → write HOTEL_MCP_CONSENT=yes
   - "不启用" → do not write HOTEL_MCP_CONSENT (or write no). Hotel tools then return CONSENT_REQUIRED
-Note: hotel searches wait a random 30s–5min between calls. On LOGIN_REQUIRED, call hotel_ctrip_login and let the native MCP question ask whether to open the login page. On USER_INTERACTION_REQUIRED, call AskUserQuestion or the host's native question tool, wait for the real answer, then pass user_action. See [Hotel login interaction](hotel-login.md).
+Note: hotel searches wait a random 15s–3min between calls. On LOGIN_REQUIRED, call hotel_ctrip_login and let the native MCP question ask whether to open the login page. On USER_INTERACTION_REQUIRED, call AskUserQuestion or the host's native question tool, wait for the real answer, then pass user_action. See [Hotel login interaction](hotel-login.md).
 ```
 
 ### 5.2 Create the .env file
@@ -219,9 +219,9 @@ HOTEL_MCP_BROWSER=edge
 # HOTEL_MCP_HEADLESS=1
 # ⚠ Hotel search risk consent (uncomment and set yes only when §5.1 D chose "enable"; otherwise the hotel domain stays unavailable)
 # HOTEL_MCP_CONSENT=yes
-# Random interval between hotel searches, in seconds (default 30–300)
-# HOTEL_MCP_MIN_DELAY=30
-# HOTEL_MCP_MAX_DELAY=300
+# Random interval between hotel searches, in seconds (default 15–180)
+# HOTEL_MCP_MIN_DELAY=15
+# HOTEL_MCP_MAX_DELAY=180
 ```
 
 > Project directories and the train entry resolve against the repository. Interpreter paths resolve against the provider directory. Windows uses `.venv/Scripts/python.exe`; macOS/Linux uses `.venv/bin/python`. Prefer absolute paths for explicit overrides.
@@ -363,7 +363,7 @@ Query Wuhan hotels for future dates (the first search does not wait for the inte
 - Tool: `hotel_ctrip_searchHotels`
 - Arguments: `city` = "武汉", `checkin` / `checkout` = today +7 / +9 days, `limit` = 5
 
-Expected: a hotel list (`status: success`, `count`, and `hotels[]`; about 1–2 minutes). `CONSENT_REQUIRED` means the risk-consent setting needs to be checked. When login state is missing, `hotel` mode asks for a login interaction. A non-interactive terminal returns `USER_INTERACTION_REQUIRED`; the agent must call the host question tool and wait for the answer. After the user chooses to open the page, the login page is shown directly. On success, retry the original query once. `LOGIN_STATE_UNKNOWN` means page load or blocking is unclear; do not treat it as an expired login. Consecutive searches wait a random 30s–5min.
+Expected: a hotel list (`status: success`, `count`, and `hotels[]`; about 1–2 minutes). `CONSENT_REQUIRED` means the risk-consent setting needs to be checked. When login state is missing, `hotel` mode asks for a login interaction. A non-interactive terminal returns `USER_INTERACTION_REQUIRED`; the agent must call the host question tool and wait for the answer. After the user chooses to open the page, the login page is shown directly. On success, retry the original query once. `LOGIN_STATE_UNKNOWN` means page load or blocking is unclear; do not treat it as an expired login. Consecutive searches wait a random 15s–3min.
 
 ### 8.5 Test map tools (map)
 

@@ -110,7 +110,7 @@
 - `hotel_ctrip_searchHotels`
 - `hotel_ctrip_login`
 
-酒店搜索通过可见浏览器抓取需要登录态的携程酒店列表。需 `HOTEL_MCP_CONSENT=yes`（封禁风险同意开关）与携程登录态（`hotel_ctrip_login` 建立）；两次搜索之间自动等待随机 30s~5min。详见主文档「酒店搜索风险告知」。
+酒店搜索通过可见浏览器抓取需要登录态的携程酒店列表。需 `HOTEL_MCP_CONSENT=yes`（封禁风险同意开关）与携程登录态（`hotel_ctrip_login` 建立）；两次搜索之间自动等待随机 15s~3min。详见主文档「酒店搜索风险告知」。
 
 ### `map/amap`
 

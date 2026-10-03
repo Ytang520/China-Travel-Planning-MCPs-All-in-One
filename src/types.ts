@@ -61,6 +61,11 @@ export type RegisteredGatewayTool = {
   inputSchema?: DownstreamToolDefinition["inputSchema"];
 };
 
+export type ToolDetails =
+  | { status: "ready"; tool_name: string; documentation_status: "complete" | "schema_only";
+      description: string; inputSchema: DownstreamToolDefinition["inputSchema"]; reference: string | null }
+  | { status: "error"; error_code: "UNKNOWN_TOOL"; tool_name: string; available_tools: string[] };
+
 export type ProviderConnectionResult = {
   provider: DownstreamProviderDefinition;
   tools: DownstreamToolDefinition[];

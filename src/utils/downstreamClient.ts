@@ -13,6 +13,7 @@ import type {
   RegisteredGatewayTool,
 } from "../types.js";
 import { jsonSchemaToZod } from "./jsonSchemaToZod.js";
+import { detailsHint } from "./toolDetails.js";
 import { normalizeToolResult } from "./toolResult.js";
 import { resolvePythonInterpreter } from "./pythonInterpreter.js";
 import { prepareHotelLogin, withHotelRecovery } from "../domains/hotel/ctrip/loginInteraction.js";
@@ -113,7 +114,7 @@ const toToolDefinition = (
 
 const toToolDescription = (provider: DownstreamProviderDefinition, tool: DownstreamToolDefinition) => {
   const summary = tool.description?.trim() || `${provider.displayName} tool`;
-  return `[${provider.domain}/${provider.providerName}] ${summary}`;
+  return `[${provider.domain}/${provider.providerName}] ${summary}\n${detailsHint(buildGatewayToolName(provider, tool.name))}`;
 };
 
 export const connectAndRegisterProvider = async (

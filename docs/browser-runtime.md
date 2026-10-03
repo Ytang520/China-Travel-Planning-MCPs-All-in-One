@@ -66,6 +66,19 @@ The checks validate complete JSON/structured results, success status, source, ro
 
 `npm run check` still runs the lightweight health check; flight/hotel health rows are connectivity-only. Run the two commands above for browser-search acceptance. Hotel live testing requires the existing explicit risk consent and a valid login. If necessary, use the existing `login` mode and complete login manually, then rerun the hotel example.
 
+## Hotel location and browser acceptance
+
+Use `get_tool_details({"tool_name":"hotel_ctrip_searchHotels"})` for the input schema and [tool reference](tool-reference.md) for result semantics. City and landmark have separate fields. Nearby and distance-sorted claims require `location_resolution.applied`, supporting page evidence, and `sorting.applied`; a URL or echoed input alone is insufficient.
+
+Opt-in Windows checks with installed Edge and Chrome use owned temporary profiles and assert the actual browser identity. They never migrate personal default profiles. Set `HOTEL_MCP_RUN_COOKIE_TRANSFER=1` for synthetic cookie attribute transfer, or `HOTEL_MCP_RUN_LOCATION_LIVE=1` for Ctrip location resolution, ID replay, filtered distance sorting, and project Edge-login cookies restored in Chrome. Live checks require valid project cookies and existing consent. Dates are generated seven days ahead. See [cookie reuse](hotel-login.md).
+
+```text
+uv run --no-project --python .venv/Scripts/python.exe python -m pytest HotelTicketMCP/tests/test_cookie_transfer.py -q
+uv run --no-project --python .venv/Scripts/python.exe python -m pytest HotelTicketMCP/tests/test_location_live.py -q
+```
+
+Without the opt-in environment variables these browser tests are skipped. Normal `npm test` and Python regression tests do not perform these live queries.
+
 ## Developer checks and evidence
 
 Hotel login always uses a visible browser and enters the official Passport login page directly. The gateway requests a native user choice before launching it; hosts without MCP elicitation must use their user-input tool when `USER_INTERACTION_REQUIRED` is returned. See the [login interaction contract](hotel-login.md) for CLI handling, isolated profiles, cancellation and timeout budgets.

@@ -11,6 +11,18 @@ const hotel = { ...hotelArgs, status: "success", data_source: "ctrip_web_scrapin
   count: 1, hotels: [{ name: "武汉示例酒店", price: null }] };
 const result = (data) => ({ content: [{ type: "text", text: JSON.stringify(data) }] });
 
+test("location echo and sort request cannot substitute for applied page evidence", () => {
+  const expected = { ...hotelArgs, location: "梨园地铁站", sort: "distance" };
+  assert.throws(() => validateSearchResult("hotel", result({ ...hotel, ...expected }), expected), /location/);
+  const verified = { ...hotel, ...expected, location_resolution: {
+    requested: expected.location, resolved_name: expected.location, status: "applied", applied: true,
+    evidence: { selected_locations: [], distance_anchors: [expected.location] },
+  }, sorting: { requested: "distance", actual: "distance", applied: true, anchor: expected.location } };
+  assert.equal(validateSearchResult("hotel", result(verified), expected), 1);
+  assert.throws(() => validateSearchResult("hotel", result({ ...verified, sorting: { ...verified.sorting, actual: "smart" } }), expected), /sorting/);
+  assert.throws(() => validateSearchResult("hotel", result({ ...verified, location_resolution: { ...verified.location_resolution, applied: false } }), expected), /location/);
+});
+
 test("China dates, future defaults and explicit dates", () => {
   assert.equal(shanghaiDate(now), "2026-10-01");
   assert.equal(flightArgs.departure_date, "2026-10-08");

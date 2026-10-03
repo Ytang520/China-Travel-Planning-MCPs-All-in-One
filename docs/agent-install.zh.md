@@ -174,7 +174,7 @@ question: "是否启用携程酒店搜索（hotel 域）？⚠ 该功能通过�
 选项:
   - "启用，我自愿承担风险" → 写入 HOTEL_MCP_CONSENT=yes
   - "不启用" → 不写入 HOTEL_MCP_CONSENT（或写入 no），酒店工具调用时返回 CONSENT_REQUIRED 错误
-说明: 两次酒店搜索之间会自动等待随机 30s~5min；搜索返回 LOGIN_REQUIRED 时调用 hotel_ctrip_login，先通过 MCP 原生提问让用户选择是否打开登录页。若返回 USER_INTERACTION_REQUIRED，必须调用 AskUserQuestion 或宿主的原生提问工具，并等待实际回答后传入 user_action。详见 [酒店登录交互](hotel-login.md)。
+说明: 两次酒店搜索之间会自动等待随机 15s~3min；搜索返回 LOGIN_REQUIRED 时调用 hotel_ctrip_login，先通过 MCP 原生提问让用户选择是否打开登录页。若返回 USER_INTERACTION_REQUIRED，必须调用 AskUserQuestion 或宿主的原生提问工具，并等待实际回答后传入 user_action。详见 [酒店登录交互](hotel-login.md)。
 ```
 
 ### 5.2 生成 .env 文件
@@ -218,9 +218,9 @@ HOTEL_MCP_BROWSER=edge
 # HOTEL_MCP_HEADLESS=1
 # ⚠ 酒店搜索风险同意（仅在 §5.1 D 项用户选择"启用"时取消注释并写 yes；不启用则整个 hotel 域不可用）
 # HOTEL_MCP_CONSENT=yes
-# 两次酒店搜索之间的随机间隔范围（秒，默认 30~300）
-# HOTEL_MCP_MIN_DELAY=30
-# HOTEL_MCP_MAX_DELAY=300
+# 两次酒店搜索之间的随机间隔范围（秒，默认 15~180）
+# HOTEL_MCP_MIN_DELAY=15
+# HOTEL_MCP_MAX_DELAY=180
 ```
 
 > 项目目录/火车入口相对仓库解析，解释器路径相对 provider 目录解析。Windows 使用 `.venv/Scripts/python.exe`；macOS/Linux 使用 `.venv/bin/python`。显式配置推荐绝对路径。
@@ -363,7 +363,7 @@ node scripts/mcp-test.mjs taxi
 - 工具：`hotel_ctrip_searchHotels`
 - 参数：`city` = "武汉"，`checkin`/`checkout` = 今天+7/+9 天，`limit` = 5
 
-预期：返回酒店列表（`status: success`、`count` 与 `hotels[]`；约 1–2 分钟）。`CONSENT_REQUIRED` 需检查已有的风险同意设置；缺少登录态时 `hotel` 模式请求登录交互，无交互终端返回 `USER_INTERACTION_REQUIRED` 后，Agent 必须先调用宿主提问工具并等待回答。用户选择打开后直接显示登录页，成功后以原参数恢复查询一次。`LOGIN_STATE_UNKNOWN` 表示页面加载或拦截状态不明，不能直接当作登录过期。连续搜索有随机 30s~5min 间隔。
+预期：返回酒店列表（`status: success`、`count` 与 `hotels[]`；约 1–2 分钟）。`CONSENT_REQUIRED` 需检查已有的风险同意设置；缺少登录态时 `hotel` 模式请求登录交互，无交互终端返回 `USER_INTERACTION_REQUIRED` 后，Agent 必须先调用宿主提问工具并等待回答。用户选择打开后直接显示登录页，成功后以原参数恢复查询一次。`LOGIN_STATE_UNKNOWN` 表示页面加载或拦截状态不明，不能直接当作登录过期。连续搜索有随机 15s~3min 间隔。
 
 ### 8.5 测试地图工具（map 域）
 

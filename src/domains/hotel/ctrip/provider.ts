@@ -16,7 +16,7 @@ export const createCtripHotelProvider = (
     providerName: "ctrip",
     displayName: "Ctrip Hotel MCP Server",
     description:
-      "Ctrip hotel search via web scraping. Requires Ctrip login and explicit risk consent (HOTEL_MCP_CONSENT=yes); searches are throttled by a random 30s-5min interval to reduce ban risk.",
+      "Ctrip hotel search via web scraping. Requires Ctrip login and explicit risk consent (HOTEL_MCP_CONSENT=yes); searches are throttled by a random 15s-3min interval to reduce ban risk.",
     enabled: true,
     retainInReadme: true,
     requestTimeout: 960_000, // Login has its own 930s budget; search is a separate tool call.

@@ -26,12 +26,27 @@ const provider = (): DownstreamProviderDefinition => ({
 });
 after(() => closeDownstreamClients());
 
+test("registered metadata and descriptions expose the original schema and details hint", async () => {
+  const descriptions: string[] = [];
+  const server = { registerTool: (_name: string, definition: { description: string }) => {
+    descriptions.push(definition.description);
+    return { remove() {} };
+  } } as unknown as McpServer;
+  const connection = await connectAndRegisterProvider(server, provider());
+  assert.ok(connection);
+  assert.deepEqual(connection.registeredTools.map((tool) => tool.inputSchema), connection.tools.map((tool) => tool.inputSchema));
+  assert.ok(descriptions.every((description) => description.includes("get_tool_details")));
+  await connection.client.close();
+});
+
 test("Python preflight failure is isolated before spawning a downstream client", async () => {
   const broken = provider();
+  const absentPidFile = resolve(temp, "preflight.pid");
+  if (broken.transport.kind === "stdio") broken.transport.args = ["--input-type=module", "-e", script, absentPidFile];
   broken.python = { workspaceRoot: process.cwd(), projectRoot: process.cwd(),
     variable: "FLIGHT_MCP_PYTHON_COMMAND", modules: [], explicitCommand: resolve(temp, "missing-python") };
   await assert.rejects(connectAndRegisterProvider({} as McpServer, broken), /PYTHON_INTERPRETER_UNAVAILABLE/);
-  assert.equal(existsSync(pidFile), false);
+  assert.equal(existsSync(absentPidFile), false);
 });
 
 test("partial registration failure removes tools and closes the child process", async () => {
