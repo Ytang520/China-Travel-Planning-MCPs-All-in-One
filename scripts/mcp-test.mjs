@@ -2,6 +2,7 @@
 // Windows, macOS, and Linux:
 //   npm run check
 //   node scripts/mcp-test.mjs [health|config|train|flight|hotel|login|map|taxi]
+//   node scripts/mcp-test.mjs flight [YYYY-MM-DD] [--limit N]
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -328,7 +329,7 @@ try {
           (await callTool(name, args, name === "hotel_ctrip_login" ? 1110000 : 990000, false)).result,
           searchRequest, message => printText(message, 500));
     const text = textOf(result);
-    // Flight acceptance returns at most five records; print complete records/JSON.
+    // Print complete flight records/JSON for the requested limit.
     printText(text, flight ? Infinity : 4000);
     const count = validateSearchResult(mode, result, searchRequest);
     printText(`PASS ${mode}: browser search returned ${count} records (${process.platform})`, 150);

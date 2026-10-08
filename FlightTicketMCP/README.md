@@ -12,6 +12,7 @@ Flight Ticket MCP Server 实现了供航空机票相关查询操作的工具和�
 
 ### 航班路线查询
 - 根据出发地、目的地和出发日期查询可用航班
+- 优先使用携程网页；抓取失败或没有符合条件的航班时，自动尝试飞猪网页 fallback，无需登录
 - 支持282个国内城市和机场代码
 - 智能城市名称解析（支持城市名、机场代码、完整格式）
 - 实时航班价格和航班时刻信息
@@ -491,13 +492,23 @@ Starting SSE transport on 127.0.0.1:8000/sse
 
 ### 航班路线查询
 ```python
-searchFlightRoutes(departure_city, destination_city, departure_date)  # 根据出发地、目的地和日期查询可用航班
+searchFlightRoutes(departure_city, destination_city, departure_date, data_source_preference="auto", limit=200)
 ```
+
+`auto` 和 `default` 均按携程 → 飞猪的顺序搜索，只返回直达航班。飞猪等待列表渲染稳定后取数，无需滚动；携程可用时直接返回携程结果。需要本机 Chrome 或 Edge，默认使用最小化窗口和独立的未登录临时会话。
+
+同一服务进程内的网页搜索串行执行。上次尝试结束后，下一次搜索（包括飞猪 fallback）默认间隔随机 15–45 秒，可通过 `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY` 调整，首次搜索无需等待。
 
 输入参数：
 - `departure_city`: 出发城市名称或机场代码 (如: "重庆", "CKG", "重庆(CKG)")
 - `destination_city`: 目的地城市名称或机场代码 (如: "广州", "CAN", "广州(CAN)")
 - `departure_date`: 出发日期 (YYYY-MM-DD格式)
+- `data_source_preference`: `auto`（默认）或 `default`
+- `earliestStartTime` / `latestStartTime`: 可选，出发小时的下限（0–23）和上限（1–24，不含）
+- `earliestArrivalTime` / `latestArrivalTime`: 可选，到达小时的下限（0–23）和上限（1–24，不含），按当地钟点筛选
+- `limit`: 单次查询最多返回的有效航班数，可选正整数，默认 `200`，agent 可按需设置为 `80`、`300` 等，200 不是硬上限；显式传 `null`（Python 为 `None`）表示不限。各次调用独立计数，携程转飞猪不增加同一次查询的额度。按页面顺序返回，先筛选、去重，再计入数量
+
+Agent 调用 MCP 时传入 JSON 字段，例如 `{"departure_city":"上海","destination_city":"北京","departure_date":"2026-12-01","limit":80}`。仓库命令行查询支持 `node scripts/mcp-test.mjs flight 2026-12-01 --limit 80`；不传 `--limit` 时默认 200。
 
 输出信息：
 - 航班列表（包含航班号、航空公司、起飞到达时间、机场、航站楼、价格）
@@ -505,6 +516,15 @@ searchFlightRoutes(departure_city, destination_city, departure_date)  # 根据�
 - 航空公司分布统计
 - 格式化的查询结果输出
 - 支持的城市：282个国内城市和机场
+- `data_source`: 成功结果的实际来源 `ctrip_web_scraping` 或 `fliggy_web_scraping`
+- `data_source_name` / `source_attribution`: 中文平台名（携程或飞猪）及可直接引用的来源说明
+- `source_url` / `query_time`: 本次航线、日期的官方查询链接及带时区的查询时间；链接会重新查询，价格可能变化。格式化结果首先展示来源、时间和链接
+- `fallback_used`: 是否使用飞猪；`source_attempts` 包含各次来源尝试的状态和等待秒数
+- 飞猪票价不含税费，由 `price_basis` 和每条航班的 `价格说明` 标注；最终总价以预订页为准。价格统计仅覆盖返回航班
+
+Agent 在最终面向用户的回复中必须明确标注实际来源“携程”或“飞猪”，引用 `source_url` 和 `query_time`，并保留飞猪票价不含税费的说明。多次查询的结果分别标注来源，不能仅凭 `auto`、`default` 或 `fallback_used` 判断成功来源。
+
+两站均抓取失败时返回 `SCRAPING_FAILED`。错误结果的 `data_source_name`、`source_url`、`source_attribution` 为 `null`；`last_attempted_data_source` / `last_attempted_data_source_name` 表示最后尝试的平台，未进行网页搜索时为 `null`。错误中的 `data_source` 仅作诊断（最后尝试来源或 `system`），不能声称已获取该平台的航班。未完成加载、访问验证或搜索条件无法确认的页面不会被当作成功的空列表。
 
 支持的城市格式：
 - 城市名：上海、北京、重庆、广州等

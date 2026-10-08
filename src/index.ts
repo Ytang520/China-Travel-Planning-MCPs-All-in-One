@@ -262,7 +262,7 @@ const registerInventoryFeatures = (
           DIDI_MCP_KEY: config.didiMcpKey ? "set" : "unset",
         },
         dataSourceNotes: [
-          "flight: Ctrip web scraping only (visible browser required, 3-8 min per query); flight browser always runs logged-out",
+          "flight: Ctrip web scraping with Fliggy website fallback (visible browser, logged-out); searches are serialized per process with a default 15-45s gap, including fallback; Fliggy fares exclude taxes and fees",
           "hotel: Ctrip web scraping, login required (HOTEL_MCP_CONSENT=yes to enable); random 15s-3min interval between searches",
           "train: 12306 direct + interline tickets (interline uses the lc_search_url-resolved path)",
           "taxi: call taxi_didi_maps_textsearch before taxi_didi_taxi_estimate",

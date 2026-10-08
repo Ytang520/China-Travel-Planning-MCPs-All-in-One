@@ -349,10 +349,12 @@ node scripts/mcp-test.mjs taxi
 查询上海时区当前日期七天后从 **上海** 到 **北京** 的航班：
 
 - 工具：`flight_flight_ticket_mcp_server_searchFlightRoutes`
-- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 上海时区当前日期 +7 天，`data_source_preference` = "default"（也可为 `auto`），`limit` = 5；不存在 `format` 参数。可选时间过滤：`earliestStartTime` / `earliestArrivalTime`（0–23）与 `latestStartTime` / `latestArrivalTime`（1–24）。
+- 参数：`departure_city` = "上海"，`destination_city` = "北京"，`departure_date` = 上海时区当前日期 +7 天，`data_source_preference` = "default"（也可为 `auto`），`limit` = 200（默认，可调整）；不存在 `format` 参数。可选时间过滤：`earliestStartTime` / `earliestArrivalTime`（0–23）与 `latestStartTime` / `latestArrivalTime`（1–24）。
 - 返回：JSON 文本，含 `status`、`flight_count`、`flights`、`formatted_output`、`requested_limit`、`collection_stop_reason` 和 `statistics_scope` 等字段
 
-安装测试最多采集五条有效、去重后的航班，达到上限即停止继续滚动；不足五条时返回实际数量。按页面采集顺序返回，价格和航司统计仅覆盖返回样本，不代表全天全部航班或最低价。`flight_count` 必须等于 `flights` 长度，空结果不能通过安装验收。`flight` 模式打印完整结果，不按字符数截断。普通工具调用可省略 `limit`，表示不设置数量上限。
+`limit` 是单次查询的数量限制，各次调用独立计数；省略时默认 200，agent 可按需传入 5、80、300 等正整数，显式 `null` 表示不限。命令行同样默认 200，可用 `node scripts/mcp-test.mjs flight --limit 80` 调整。数量只计入有效、去重且符合筛选条件的航班，不足时返回实际数量。携程达到数量后停止继续滚动；飞猪等待完整列表稳定后取数，无需滚动。按页面采集顺序返回，价格和航司统计仅覆盖返回样本，不代表全天全部航班或最低价。`flight_count` 必须等于 `flights` 长度，空结果不能通过安装验收。`flight` 模式打印完整结果，不按字符数截断。
+
+默认先查询携程，失败或无符合条件的航班时尝试飞猪，仍受同一次查询的 `limit` 限制。成功结果提供 `data_source_name`、`source_attribution`、`source_url` 和 `query_time`。Agent 必须在最终回复中明确标注实际来源携程或飞猪，引用查询链接和时间；飞猪票价不含税费，多次查询应分别标注来源。失败时的 `last_attempted_data_source_name` 仅表示尝试的平台，不能当作成功获取数据的来源。完整说明可通过 `get_tool_details` 读取该工具的详情。
 
 预期：返回航班列表（需 1–8 分钟；期间会短暂出现一个**最小化浏览器窗口**（任务栏可见），不抢前台）。若失败，检查：本机是否安装 Chrome/Edge、`FLIGHT_MCP_BROWSER` 内核选择、`FLIGHT_MCP_HEADLESS` 是否为 1（会被携程拦截）、`root .venv or FlightTicketMCP/.venv` 是否存在以及 `FLIGHT_MCP_PYTHON_COMMAND` 是否正确。注意：网关**不提供**航班中转工具。
 

@@ -63,11 +63,31 @@ test("Ctrip overnight arrival times are valid", () => {
   assert.equal(validateSearchResult("flight", result(overnight), flightArgs), 1);
 });
 
-test("flight acceptance enforces five complete, valid records", () => {
-  assert.equal(flightArgs.limit, 5);
+test("flight acceptance defaults to two hundred and enforces the requested limit", () => {
+  assert.equal(flightArgs.limit, 200);
+  const fiveArgs = searchArguments("flight", ["--limit", "5"], now);
   const records = Array.from({ length: 6 }, (_, i) => ({ ...flight.flights[0], 航班号: `MU${5101 + i}` }));
-  assert.equal(validateSearchResult("flight", result({ ...flight, flights: records.slice(0, 5), flight_count: 5 }), flightArgs), 5);
-  assert.throws(() => validateSearchResult("flight", result({ ...flight, flights: records, flight_count: 6 }), flightArgs), /limit/);
+  assert.equal(validateSearchResult("flight", result({ ...flight, flights: records.slice(0, 5), flight_count: 5 }), fiveArgs), 5);
+  assert.throws(() => validateSearchResult("flight", result({ ...flight, flights: records, flight_count: 6 }), fiveArgs), /limit/);
   assert.throws(() => validateSearchResult("flight", result({ ...flight,
     flights: [records[0], { 航班号: "未知" }], flight_count: 2 }), flightArgs), /invalid flight/);
+});
+
+test("flight --limit supports larger samples, both syntaxes and either argument order", () => {
+  for (const args of [["--limit", "250"], ["--limit=250"], ["2026-10-08", "--limit", "250"], ["--limit", "250", "2026-10-08"]]) {
+    const expected = searchArguments("flight", args, now);
+    assert.equal(expected.limit, 250);
+    assert.equal(expected.departure_date, "2026-10-08");
+    const records = Array.from({ length: 250 }, (_, i) => ({ ...flight.flights[0], 航班号: `MU${5101 + i}` }));
+    assert.equal(validateSearchResult("flight", result({ ...flight, flights: records, flight_count: 250 }), expected), 250);
+  }
+  for (const args of [["--limit"], ["--limit=0"], ["--limit=-1"], ["--limit=1.5"], ["--limit=none"],
+    ["--limit=9007199254740992"], ["--limit=5", "--limit", "6"]]) {
+    assert.throws(() => searchArguments("flight", args, now), /limit/);
+  }
+});
+
+test("flight acceptance recognizes real Fliggy results without allowing Fliggy hotel results", () => {
+  assert.equal(validateSearchResult("flight", result({ ...flight, data_source: "fliggy_web_scraping" }), flightArgs), 1);
+  assert.throws(() => validateSearchResult("hotel", result({ ...hotel, data_source: "fliggy_web_scraping" }), hotelArgs), /data source/);
 });

@@ -30,6 +30,24 @@ Read the redacted runtime configuration with `{}`. Results include provider conn
 
 Run lightweight probes for the requested optional `domain`, or all domains with `{}`. Train reads the current date; map geocodes 北京南站; taxi searches 北京南站. Flight and hotel report connectivity only and do not open browsers. Each row reports PASS/FAIL, provider information, and a sample or error. A connectivity-only PASS does not confirm login or scraping.
 
+## flight_flight_ticket_mcp_server_searchFlightRoutes
+
+Search direct flights by `departure_city`, `destination_city`, and `departure_date` (YYYY-MM-DD, today or later). Cities accept names, supported codes, or full forms such as 上海(SHA). `data_source_preference` is `auto` (default) or `default`; both search Ctrip first and try the Fliggy website once if Ctrip fails or returns no matching flights. Requires installed Chrome or Edge; both sources use an owned, logged-out browser.
+
+Optional `earliestStartTime` / `latestStartTime` and `earliestArrivalTime` / `latestArrivalTime` filter local departure/arrival hours. Lower bounds are 0–23, inclusive; upper bounds are 1–24, exclusive. Arrival filters use the local clock hour, including next-day arrivals. Optional `limit` is a positive integer, default 200 **per tool call**. Agents may adjust it to 80, 300, or another positive integer; explicit null means no count limit. Each call has an independent limit: two calls with `limit: 80` may each return 80 flights. Fallback stays within the same call's limit; results from the two sites are not combined. Results retain page order, with filtering and deduplication before applying the limit. Statistics cover only returned flights. Agents pass `limit` as a JSON argument. The repository CLI also accepts `node scripts/mcp-test.mjs flight [YYYY-MM-DD] --limit 80` (default 200).
+
+```json
+{"departure_city":"上海","destination_city":"北京","departure_date":"2026-12-01","earliestStartTime":8,"latestStartTime":12,"limit":5}
+```
+
+`flights` contains Chinese field names for flight number, airline, local times, airports, terminals and fare. On success, `data_source` is `ctrip_web_scraping` or `fliggy_web_scraping`, and `data_source_name` is `携程` or `飞猪`. `source_attribution` gives a human-readable source statement; `source_url` is the official search link for the requested route/date, and `query_time` includes the local UTC offset. `formatted_output` starts with the same attribution, time, and link. The link opens a fresh search; it does not preserve the quoted price. `fallback_used` reports fallback use and `source_attempts` records each attempt's status, error and wait. Fliggy fares exclude taxes/fees (`price_basis` / `价格说明`: `不含税费`). Fliggy collects a stable rendered list without scrolling and excludes transfer recommendations. A verified empty list can return success with zero flights; blocked, unverified or unparseable pages return `SCRAPING_FAILED` when fallback also fails.
+
+**Required final-answer attribution:** agents must explicitly name the actual successful source, 携程 (Ctrip) or 飞猪 (Fliggy), in the user-facing answer, cite `source_url`, and state `query_time`. Use `data_source_name` / `source_attribution`; retain the taxes/fees exclusion for Fliggy fares. For example: “数据来源：飞猪；查询时间：…；票价不含税费。” When combining several calls, attribute each group of results to its own source. `auto`, `default`, and `fallback_used` alone are not proof of a successful source. A successful empty result identifies the query source, not any available fares.
+
+On an error, `data_source_name`, `source_url`, and `source_attribution` are null. `last_attempted_data_source` / `last_attempted_data_source_name` identify the last attempted site, or are null if no page search occurred. The legacy `data_source` then serves only as a diagnostic identifier (the last attempted source, or `system`). Report failed attempts as failures; do not claim that flights were obtained from them. Schema validation failures may instead return an MCP tool error.
+
+Page searches run serially within each provider process, leaving a random 15–45 second gap after the previous attempt finishes, including switching to Fliggy. Configure `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY` in seconds. The first attempt has no interval wait. Invalid inputs fail before browser launch. Browsers close after each tool call.
+
 ## hotel_ctrip_searchHotels
 
 Search Ctrip hotels. Requires existing project login cookies and `HOTEL_MCP_CONSENT=yes`. Queries use an owned browser and wait a random 15 seconds to 3 minutes between searches. The browser closes after each request.

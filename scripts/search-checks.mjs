@@ -18,13 +18,33 @@ const addDays = (date, days) => new Date(
 
 export const searchArguments = (mode, dates = [], now = new Date()) => {
   const today = shanghaiDate(now);
+  let limit = 200;
+  if (mode === "flight") {
+    const positional = [];
+    let seenLimit = false;
+    for (let index = 0; index < dates.length; index += 1) {
+      const arg = dates[index];
+      if (arg === "--limit" || arg.startsWith("--limit=")) {
+        if (seenLimit) throw new Error("Specify --limit only once.");
+        seenLimit = true;
+        const value = arg === "--limit" ? dates[++index] : arg.slice("--limit=".length);
+        if (!value || !/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) {
+          throw new Error("--limit must be a positive integer, for example --limit 80.");
+        }
+        limit = Number(value);
+      } else {
+        positional.push(arg);
+      }
+    }
+    dates = positional;
+  }
   if (dates.some((date) => !validDate(date) || date < today)) {
     throw new Error("Use valid YYYY-MM-DD dates on or after today in Asia/Shanghai.");
   }
   if (mode === "flight") {
-    if (dates.length > 1) throw new Error("usage: flight [YYYY-MM-DD]");
+    if (dates.length > 1) throw new Error("usage: flight [YYYY-MM-DD] [--limit N]");
     return { departure_city: "上海", destination_city: "北京",
-      departure_date: dates[0] ?? addDays(today, 7), data_source_preference: "default", limit: 5 };
+      departure_date: dates[0] ?? addDays(today, 7), data_source_preference: "default", limit };
   }
   if (mode !== "hotel" || ![0, 2].includes(dates.length)) {
     throw new Error("usage: hotel [checkin checkout]");
@@ -49,7 +69,8 @@ export const validateSearchResult = (mode, result, expected) => {
   if (!data || data.status !== "success") {
     throw new Error(`Search not verified: ${data?.error_code ?? data?.status ?? "INVALID_RESULT"} ${data?.message ?? ""}`);
   }
-  if (data.data_source !== "ctrip_web_scraping") throw new Error("Unexpected search data source");
+  const sources = mode === "flight" ? ["ctrip_web_scraping", "fliggy_web_scraping"] : ["ctrip_web_scraping"];
+  if (!sources.includes(data.data_source)) throw new Error("Unexpected search data source");
   const keys = mode === "flight"
     ? ["departure_city", "destination_city", "departure_date"] : ["city", "checkin", "checkout"];
   for (const key of keys) {

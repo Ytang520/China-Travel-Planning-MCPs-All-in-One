@@ -24,6 +24,10 @@
 | [安装网关](cases/01-安装-mcp.md) | 同一模型下，做与不做部署后功能测试的 token、费用和耗时 |
 | [武汉酒店：东湖与武汉大学 8 站内](cases/02-武汉酒店-东湖与武大.md) | 沿地铁站收集酒店；结果表 [武汉酒店_东湖与武大8站内_20261003.xlsx](cases/武汉酒店_东湖与武大8站内_20261003.xlsx) |
 
+## 与已有方案的差异
+
+和若干已有出行方案的差别，以及不采用飞猪 API 的原因，见 [对比说明](docs/cn-travel-mcp-comparison.zh.md)。
+
 ## 让 Agent 安装
 
 把下面内容复制给你的 LLM Agent（Cursor、Claude Code、OpenCode 等），让它按指南完成依赖安装、密钥配置、构建验证和 MCP 客户端配置：
@@ -82,6 +86,7 @@ node scripts/mcp-test.mjs config
 | `FLIGHT_MCP_BROWSER` | 航班抓取浏览器内核：`edge`（默认）/ `chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | 可选，显式浏览器可执行文件路径（优先于 `FLIGHT_MCP_BROWSER`） |
 | `FLIGHT_MCP_HEADLESS` | 可选，`1` 时使用无头模式（不推荐：会被携程拦截） |
+| `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY` | 航班网页搜索间隔下限/上限，默认 `15` / `45` 秒；包括切换至飞猪的等待 |
 | `HOTEL_MCP_PROJECT_ROOT` | 可选，`HotelTicketMCP` 根目录 |
 | `HOTEL_MCP_PYTHON_COMMAND` | 运行 HotelTicketMCP 的 Python（自动校验根 `.venv`，然后子项目 `.venv`；可显式指定解释器） |
 | `HOTEL_MCP_BROWSER` | 酒店抓取浏览器内核：`edge`（默认）/ `chrome`（与航班一致） |
@@ -102,7 +107,7 @@ node scripts/mcp-test.mjs config
 
 - 安装本 MCP 时选择内核 **A = Edge（默认）/ B = Chrome**，通过 `FLIGHT_MCP_BROWSER` 配置；
 - 查询时默认以**最小化窗口**打开（任务栏可见，不抢占前台焦点）；
-- 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后会被携程拦截，航班查询将失败；
+- 无头模式（`FLIGHT_MCP_HEADLESS=1`）默认不使用，开启后可能被网站拦截；
 - 航班抓取使用**每次全新的临时 profile** 并清空 cookie，保证航班查询永远处于未登录状态。
 
 **酒店查询（hotels.ctrip.com）同样需要本机安装 Chrome 或 Edge**（内核选择 `HOTEL_MCP_BROWSER`，默认与航班一致），且**需要携程登录态**（游客会被重定向到登录页）：
@@ -115,7 +120,7 @@ node scripts/mcp-test.mjs config
 
 - 安装时必须显式同意风险条款（`HOTEL_MCP_CONSENT=yes`）才会启用酒店工具；**选择启用即表示自愿承担该风险，作者概不负责**；
 - 为降低风险，两次酒店搜索之间自动等待随机 15 秒 ~ 3 分钟（可用 `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY` 调整），滚动采集采用随机步幅与停顿的人性化行为；
-- 航班搜索不受酒店登录态影响（独立临时 profile），也不会加入该限速。
+- 航班搜索使用独立临时 profile，不受酒店登录态影响；航班搜索间隔默认随机 15–45 秒。
 
 ### 直达与中转说明
 
@@ -132,7 +137,7 @@ node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
 ```
 
-可选日期为 `flight YYYY-MM-DD` 或 `hotel 入住日期 退房日期`。脚本校验非空业务记录、日期和数量；空结果、登录要求和网页拦截均不会通过。`npm run check` 的航班/酒店检查仅表示连接性。
+可选日期为 `flight YYYY-MM-DD [--limit N]` 或 `hotel 入住日期 退房日期`。航班默认最多 200 条，可用 `--limit 80` 等参数调整。脚本校验非空业务记录、日期和数量；空结果、登录要求和网页拦截均不会通过。`npm run check` 的航班/酒店检查仅表示连接性。
 
 浏览器依次检查显式路径、首选浏览器登记信息/指定命令 `shutil.which()`/常见位置、另一浏览器；最后允许 DrissionPage 自行发现并尝试一次。程序不遍历完整 PATH，最后失败会提示提供路径。酒店退出恢复适配三个平台并保留登录资料。详见[运行指南](docs/browser-runtime.md)。macOS/Linux 模拟测试仅验证平台分支，实机验收需对应环境。
 
@@ -194,7 +199,13 @@ node scripts/mcp-test.mjs hotel
 
 ### 航班查询
 
-航班查询（默认 `auto`，等价于 `default`）：抓取携程网页航班列表，通过**最小化可见浏览器**（任务栏可见）执行（详见上文「浏览器依赖」）。查询耗时 3–8 分钟，仅支持直达航班。
+航班查询（默认 `auto`，等价于 `default`）优先抓取**携程网页**；携程抓取失败或未返回符合条件的航班时，自动尝试一次**飞猪网页 fallback**。两者均使用未登录的**最小化可见浏览器**（详见上文「浏览器依赖」）。飞猪等待列表渲染稳定后直接取数，无需滚动；中转推荐不计入直达结果。携程查询通常耗时 3–8 分钟，fallback 另需搜索间隔和页面加载时间。
+
+同一服务进程内的航班网页搜索串行执行，上次搜索结束后到下次开始之间默认保留随机 15–45 秒间隔，切换至飞猪也遵循该间隔。可通过 `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY` 调整。时间筛选、`limit` 和返回字段在两种来源下保持一致；`data_source` 标明 `ctrip_web_scraping` 或 `fliggy_web_scraping`，`fallback_used` 表示是否使用备用来源，`source_attempts` 提供各次尝试的状态。飞猪票价**不含税费**，结果中的 `price_basis` / `价格说明` 会标明此口径，最终价格以预订页为准。两站均抓取失败时返回错误。
+
+航班参数 `limit` 限制**单次查询**的返回数量，默认 200，可设置为 80、300 等正整数，200 不是硬上限；显式传 `null` 表示不限。各次调用独立计数，例如两次 `limit=80` 的查询各自最多返回 80 条；同一次查询内转飞猪不会增加额度。Agent 通过 MCP 的 JSON 参数传值，命令行对应 `node scripts/mcp-test.mjs flight --limit 80`。
+
+成功结果提供中文来源名 `data_source_name`、来源说明 `source_attribution`、查询链接 `source_url` 和带时区的 `query_time`，格式化结果也会首先展示这些信息。Agent 在最终回复中必须明确写出实际来源**携程**或**飞猪**，引用查询链接和时间；飞猪票价须注明不含税费。多次查询的结果应分别标注来源。查询链接会重新搜索，价格可能变化；失败结果中的 `last_attempted_data_source_name` 仅表示尝试过的平台。
 
 ### 酒店查询
 

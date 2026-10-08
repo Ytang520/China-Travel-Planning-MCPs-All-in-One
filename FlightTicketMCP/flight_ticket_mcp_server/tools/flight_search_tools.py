@@ -13,6 +13,8 @@ import logging
 from pathlib import Path
 from ..utils.browser_discovery import BrowserDiscovery
 from ..utils.browser_runtime import OwnedBrowser
+from ..utils.search_interval import FlightSearchInterval
+from . import fliggy_search
 import tempfile
 import time
 import re
@@ -43,6 +45,10 @@ except ImportError:
 # =================== 航班路线查询功能 ===================
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+DEFAULT_FLIGHT_LIMIT = 200
+CTRIP_SEARCH_URL = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
+SOURCE_NAMES = {"ctrip_web_scraping": "携程", fliggy_search.DATA_SOURCE: "飞猪"}
+_SEARCH_INTERVAL = FlightSearchInterval()
 
 
 def _resolve_browser_path() -> Optional[str]:
@@ -67,7 +73,7 @@ class FlightRouteSearcher:
         if not DRISSION_PAGE_AVAILABLE:
             raise ImportError("DrissionPage库未安装，无法使用航班路线查询功能")
 
-        self.base_url = "https://flights.ctrip.com/online/list/oneway-{}-{}?_=1&depdate={}&cabin=Y_S_C_F"
+        self.base_url = CTRIP_SEARCH_URL
 
         self._profile_dir = tempfile.mkdtemp(prefix="flightctrip-profile-")
         self._session = OwnedBrowser(
@@ -85,12 +91,94 @@ class FlightRouteSearcher:
         self.last_parse_status = "not_started"
         self.last_parse_error = None
         self.last_collection_stop_reason = "not_started"
+        self.last_data_source = "ctrip_web_scraping"
+        self.source_attempts = []
+        self.fallback_used = False
         self._earliestStartTime = None
         self._latestStartTime = None
         self._earliestArrivalTime = None
         self._latestArrivalTime = None
 
     def search_flights(
+        self, departure_city: str, destination_city: str, departure_date: str,
+        earliestStartTime: Optional[int] = None,
+        latestStartTime: Optional[int] = None,
+        earliestArrivalTime: Optional[int] = None,
+        latestArrivalTime: Optional[int] = None,
+        limit: Optional[int] = DEFAULT_FLIGHT_LIMIT,
+    ) -> List[Dict[str, Any]]:
+        """Try Ctrip first, then one logged-out Fliggy search if no usable rows remain."""
+        _validate_limit(limit)
+        self.source_attempts = []
+        self.fallback_used = False
+        self.last_data_source = "ctrip_web_scraping"
+        self.last_parse_status = "not_started"
+        self.last_parse_error = None
+        self.last_collection_stop_reason = "not_started"
+        if not get_airport_code(departure_city) or not get_airport_code(destination_city):
+            self.last_parse_status = "request_failed"
+            self.last_parse_error = "城市或机场代码无效"
+            return []
+        try:
+            datetime.strptime(departure_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            self.last_parse_status = "request_failed"
+            self.last_parse_error = "日期格式不正确，请使用YYYY-MM-DD格式"
+            return []
+        self._earliestStartTime = earliestStartTime
+        self._latestStartTime = latestStartTime
+        self._earliestArrivalTime = earliestArrivalTime
+        self._latestArrivalTime = latestArrivalTime
+        time_filters = (earliestStartTime, latestStartTime, earliestArrivalTime, latestArrivalTime)
+        for source in ("ctrip_web_scraping", fliggy_search.DATA_SOURCE):
+            self.last_data_source = source
+            self.fallback_used = source == fliggy_search.DATA_SOURCE
+            self.last_parse_status = "not_started"
+            self.last_parse_error = None
+            self.last_collection_stop_reason = "not_started"
+            with _SEARCH_INTERVAL.search() as interval:
+                try:
+                    if self.fallback_used:
+                        result = fliggy_search.collect_flights(
+                            self.page, departure_city, destination_city, departure_date,
+                        )
+                        self.last_parse_status = result.status
+                        self.last_parse_error = result.error
+                        filtered, _ = self._client_side_time_filter(result.flights, *time_filters)
+                        flights = []
+                        self._append_flights(filtered, flights, set(), limit)
+                        self.last_collection_stop_reason = (
+                            "limit_reached" if limit is not None and len(flights) >= limit
+                            else "list_stable" if result.status in {"success", "no_results"}
+                            else result.status
+                        )
+                    else:
+                        flights = self._search_ctrip(
+                            departure_city, destination_city, departure_date,
+                            *time_filters, limit=limit,
+                        )
+                        flights, _ = self._client_side_time_filter(flights, *time_filters)
+                    if not flights and self.last_parse_status == "success":
+                        self.last_parse_status = "no_results"
+                except Exception as exc:
+                    flights = []
+                    self.last_parse_status = "request_failed"
+                    self.last_parse_error = str(exc)
+                    self.last_collection_stop_reason = "request_failed"
+                    logger.warning("%s 航班查询失败: %s", source, exc)
+            self.source_attempts.append({
+                "data_source": source, "status": self.last_parse_status,
+                "flight_count": len(flights), "error": self.last_parse_error, **interval,
+            })
+            if flights:
+                for index, flight in enumerate(flights, 1):
+                    flight["序号"] = index
+                return flights
+            if not self.fallback_used:
+                logger.info("携程未返回可用航班，等待搜索间隔后尝试飞猪")
+        return []
+
+    def _search_ctrip(
         self,
         departure_city: str,
         destination_city: str,
@@ -161,6 +249,15 @@ class FlightRouteSearcher:
         try:
             # 访问页面
             self.page.get(search_url, timeout=180)
+            # Fail promptly on a visible block instead of scrolling a challenge page.
+            try:
+                blocked = self.page.run_js(r"""
+                    return /访问受限|访问过于频繁|请完成.{0,8}验证|滑动.{0,8}验证|验证码|Access Denied|HTTP 432/i.test(document.body?.innerText || '');
+                """)
+            except Exception:
+                blocked = False
+            if blocked:
+                raise RuntimeError("携程页面要求验证或限制访问")
             logger.info("页面加载完成，等待内容渲染...")
             # 智能等待页面加载完成
             self._wait_for_page_ready()
@@ -1026,6 +1123,22 @@ class FlightRouteSearcher:
         self._session.close()
 
 
+def _failure_source_details(searcher=None) -> Dict[str, Any]:
+    """Keep attempted providers diagnostic-only when no result can be returned."""
+    attempts = getattr(searcher, "source_attempts", [])
+    last_source = attempts[-1]["data_source"] if attempts else None
+    return {
+        "data_source": last_source or "system",
+        "data_source_name": None,
+        "source_url": None,
+        "source_attribution": None,
+        "last_attempted_data_source": last_source,
+        "last_attempted_data_source_name": SOURCE_NAMES.get(last_source),
+        "fallback_used": any(a["data_source"] == fliggy_search.DATA_SOURCE for a in attempts),
+        "source_attempts": attempts,
+    }
+
+
 def searchFlightRoutes(
     departure_city: str,
     destination_city: str,
@@ -1035,7 +1148,7 @@ def searchFlightRoutes(
     latestStartTime: Optional[int] = None,
     earliestArrivalTime: Optional[int] = None,
     latestArrivalTime: Optional[int] = None,
-    limit: Optional[int] = None,
+    limit: Optional[int] = DEFAULT_FLIGHT_LIMIT,
 ) -> Dict[str, Any]:
     """
     根据出发地、目的地和出发日期查询航班路线
@@ -1049,7 +1162,7 @@ def searchFlightRoutes(
         latestStartTime: 最晚出发小时 (1-24), None表示无限制
         earliestArrivalTime: 最早到达小时 (0-23), None表示无限制
         latestArrivalTime: 最晚到达小时 (1-24), None表示无限制
-        limit: 最多返回的有效航班数，None表示不设置数量上限；统计仅覆盖返回样本
+        limit: 单次查询最多返回的有效航班数，默认200，可按需指定任意正整数；None表示不限，各次调用独立计数
 
     Returns:
         包含航班查询结果的字典
@@ -1072,18 +1185,19 @@ def searchFlightRoutes(
     if normalized_preference == "variflight":
         return {
             "status": "error",
-            "message": "VariFlight 数据源已下线，请使用 auto/default（携程网页数据源）",
+            "message": "VariFlight 数据源已下线，请使用 auto/default（携程网页，飞猪备用）",
             "error_code": "DATA_SOURCE_REMOVED",
-            "data_source": "system",
+            **_failure_source_details(),
         }
     if normalized_preference not in {"auto", "default"}:
         return {
             "status": "error",
             "message": "data_source_preference 仅支持 auto、default",
             "error_code": "INVALID_DATA_SOURCE_PREFERENCE",
-            "data_source": "system",
+            **_failure_source_details(),
         }
 
+    searcher = None
     try:
         # 验证输入参数
         if not departure_city or not destination_city or not departure_date:
@@ -1092,7 +1206,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": "出发地、目的地和出发日期都不能为空",
                 "error_code": "INVALID_PARAMS",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         # 检查依赖是否可用
@@ -1102,7 +1216,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": "DrissionPage库未安装，无法进行航班搜索",
                 "error_code": "DRISSION_PAGE_NOT_AVAILABLE",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         if not get_airport_code or not get_city_name:
@@ -1111,7 +1225,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": "城市字典未找到，无法进行航班搜索",
                 "error_code": "CITIES_DICT_NOT_AVAILABLE",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         # 验证日期格式
@@ -1124,7 +1238,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": "日期格式不正确，请使用YYYY-MM-DD格式",
                 "error_code": "INVALID_DATE_FORMAT",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         # 检查日期是否为过去的日期
@@ -1134,7 +1248,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": "不能查询过去的日期",
                 "error_code": "PAST_DATE",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         # 验证城市/机场代码
@@ -1144,7 +1258,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": f"无效的出发地: {departure_city}",
                 "error_code": "INVALID_DEPARTURE_CITY",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         if not get_airport_code(destination_city):
@@ -1153,7 +1267,7 @@ def searchFlightRoutes(
                 "status": "error",
                 "message": f"无效的目的地: {destination_city}",
                 "error_code": "INVALID_DESTINATION_CITY",
-                "data_source": "ctrip_web_scraping",
+                **_failure_source_details(),
             }
 
         # 创建搜索器并搜索
@@ -1208,11 +1322,24 @@ def searchFlightRoutes(
                     "departure_city": departure_city,
                     "destination_city": destination_city,
                     "departure_date": departure_date,
-                    "query_time": datetime.now().isoformat(),
-                    "data_source": "ctrip_web_scraping",
+                    "query_time": datetime.now().astimezone().isoformat(),
+                    "requested_data_source": normalized_preference,
+                    **_failure_source_details(searcher),
                 }
 
             # 格式化结果
+            source_name = SOURCE_NAMES[searcher.last_data_source]
+            is_fliggy = searcher.last_data_source == fliggy_search.DATA_SOURCE
+            source_url = (
+                fliggy_search.build_search_url(departure_city, destination_city, departure_date)
+                if is_fliggy else CTRIP_SEARCH_URL.format(
+                    get_airport_code(departure_city).lower(),
+                    get_airport_code(destination_city).lower(), departure_date,
+                )
+            )
+            source_attribution = f"{'数据' if merged_flights else '查询'}来源：{source_name}"
+            if is_fliggy and merged_flights:
+                source_attribution += f"（票价{fliggy_search.PRICE_BASIS}）"
             result = {
                 "status": "success",
                 "departure_city": departure_city,
@@ -1229,10 +1356,14 @@ def searchFlightRoutes(
                 "formatted_output": _format_route_result(
                     merged_flights, departure_city, destination_city, departure_date
                 ),
-                "query_time": datetime.now().isoformat(),
-                "fallback_used": False,
+                "query_time": datetime.now().astimezone().isoformat(),
+                "fallback_used": searcher.fallback_used,
                 "requested_data_source": normalized_preference,
-                "data_source": "ctrip_web_scraping",
+                "data_source": searcher.last_data_source,
+                "data_source_name": source_name,
+                "source_url": source_url,
+                "source_attribution": source_attribution,
+                "source_attempts": searcher.source_attempts,
                 "time_filter_warnings": time_filter_warnings,
             }
 
@@ -1256,13 +1387,18 @@ def searchFlightRoutes(
                     result["price_statistics"] = {
                         "min_price": min(prices),
                         "max_price": max(prices),
-                        "avg_price": sum(prices) // len(prices),
+                        "avg_price": round(sum(prices) / len(prices), 2),
                     }
 
                 if airlines:
                     result["airline_statistics"] = airlines
 
-            result["formatted_output"] += "\n\n🧾 数据源: ctrip_web_scraping"
+            result["formatted_output"] = (
+                f"{source_attribution}\n查询时间：{result['query_time']}\n"
+                f"查询链接：{source_url}\n\n{result['formatted_output']}"
+            )
+            if is_fliggy:
+                result["price_basis"] = fliggy_search.PRICE_BASIS
 
             logger.info(
                 "航班路线查询成功: 原始航班 %s 条，合并后独立航班 %s 条",
@@ -1281,7 +1417,7 @@ def searchFlightRoutes(
             "message": f"查询航班路线失败: {str(e)}",
             "error_code": getattr(e, "code", "SEARCH_FAILED"),
             "requested_data_source": normalized_preference,
-            "data_source": "ctrip_web_scraping",
+            **_failure_source_details(searcher),
         }
         return primary_error
 
@@ -1421,16 +1557,17 @@ def _merge_flight_group(
     return primary_flight
 
 
-def _extract_price_value(price: Any) -> Optional[int]:
+def _extract_price_value(price: Any) -> Optional[int | float]:
     """从价格文本中提取数值"""
     if price is None:
         return None
 
-    match = re.search(r"(\d{3,6})", str(price))
+    match = re.search(r"\d+(?:,\d{3})*(?:\.\d{1,2})?", str(price))
     if not match:
         return None
 
-    return int(match.group(1))
+    number = match.group(0).replace(",", "")
+    return float(number) if "." in number else int(number)
 
 
 def _extract_route_signature(raw_text: str) -> str:

@@ -10,6 +10,23 @@
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-08
+
+航班查询在携程网页没有可用结果时，自动用未登录的飞猪网页再查一次。同时补充真实使用案例，以及与其他出行方案的差异说明。
+
+### 航班查询
+
+- `auto` / `default` 仍优先抓取携程网页。携程抓取失败，或没有符合条件的航班时，等待搜索间隔后自动尝试一次飞猪网页（`fliggy_web_scraping`）。
+- 飞猪查询不登录、不滚动；中转推荐不计入直达结果。票价不含税费，结果用 `price_basis` 标明。成功结果会区分来源是携程还是飞猪，并带查询链接与时间。
+- `limit` 按单次查询计数，同一次查询转到飞猪不会另加额度。同一进程内的航班网页搜索串行执行，默认间隔 15–45 秒（`FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY`），切换飞猪也计入该间隔。
+
+### 使用案例与方案比较
+
+- [cases](cases/)：安装网关的 token 与费用，以及武汉酒店收集案例和结果表。
+- [与已有方案的差异](docs/cn-travel-mcp-comparison.zh.md)：对照 codex-china-travel-suite、Go-Home、china-travel-assistant、Dida-hotel-MCP-CN、trvl，并说明不采用飞猪 API、改为网页 fallback 的原因。
+
+[完整文件差异：v0.2.1 → v0.2.2](https://github.com/Ytang520/China-Travel-Planning-MCPs-All-in-One/compare/v0.2.1..v0.2.2)
+
 ## [0.2.1] - 2026-10-02
 
 本版新增携程酒店搜索与交互式登录，完善浏览器与 Python 环境发现、登录恢复及进程清理，并提供可重复执行的安装验收脚本。

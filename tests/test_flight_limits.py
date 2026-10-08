@@ -2,6 +2,7 @@
 from datetime import date, timedelta
 import importlib
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -78,6 +79,13 @@ def test_omitted_limit_keeps_collecting_beyond_five(make_searcher):
     assert state.scrolls > 0
 
 
+def test_searcher_defaults_to_two_hundred_without_a_hard_cap(make_searcher):
+    searcher, state = make_searcher([[flight(i) for i in range(1, 291)]])
+    assert len(searcher.search_flights("上海", "北京", "2099-01-01")) == 200
+    assert state.scrolls == 0
+    assert len(searcher.search_flights("上海", "北京", "2099-01-01", limit=250)) == 250
+
+
 def test_fallback_parser_applies_same_limit_and_deduplication(make_searcher):
     searcher, _ = make_searcher([[flight(1), flight(1), {"航班号": "未知"}, *[flight(i) for i in range(2, 10)]]])
     searcher._collect_visible_flights = lambda *a, **k: 0
@@ -115,6 +123,12 @@ async def test_mcp_limit_schema_forwarding_results_and_cleanup(make_searcher, mo
         schema = tool.model_dump(by_alias=True)["inputSchema"]
         assert "limit" in schema["properties"]
         assert "limit" not in schema.get("required", [])
+        assert schema["properties"]["limit"]["default"] == 200
+        assert "单次查询" in schema["properties"]["limit"]["description"]
+        assert "可按需调整" in schema["properties"]["limit"]["description"]
+        assert "agent必须在最终面向用户的回复中明确标注实际来源" in tool.description
+        integer_schema = next(item for item in schema["properties"]["limit"]["anyOf"] if item["type"] == "integer")
+        assert integer_schema["minimum"] == 1 and "maximum" not in integer_schema
         for invalid in [0, -1, 1.5, True, "5"]:
             with pytest.raises(ToolError):
                 await client.call_tool("searchFlightRoutes", {**args, "limit": invalid})
@@ -124,5 +138,47 @@ async def test_mcp_limit_schema_forwarding_results_and_cleanup(make_searcher, mo
     assert data["requested_limit"] == 5
     assert data["collection_stop_reason"] == "limit_reached"
     assert data["statistics_scope"] == "returned_flights"
+    assert data["data_source"] == "ctrip_web_scraping" and data["data_source_name"] == "携程"
+    assert data["source_attribution"] == "数据来源：携程"
+    assert data["formatted_output"].startswith(data["source_attribution"])
+    source = urlparse(data["source_url"])
+    assert source.hostname == "flights.ctrip.com" and source.path.endswith("oneway-sha-bjs")
+    assert parse_qs(source.query)["depdate"] == [args["departure_date"]]
+    assert data["query_time"] in data["formatted_output"] and data["source_url"] in data["formatted_output"]
     assert state.scrolls == 0
+    assert state.closed
+
+
+@pytest.mark.asyncio
+async def test_repeated_mcp_calls_have_independent_limits(make_searcher, monkeypatch):
+    from fastmcp import Client, FastMCP
+    main = importlib.import_module("flight_ticket_mcp_server.main")
+    searchers = [make_searcher([[flight(i) for i in range(90)]]) for _ in range(2)]
+    pending = iter(searchers)
+    monkeypatch.setattr(tools, "FlightRouteSearcher", lambda **k: next(pending)[0])
+    monkeypatch.setattr(main, "mcp", FastMCP("independent-limit-contract"))
+    main.register_tools()
+    args = {"departure_city": "上海", "destination_city": "北京", "departure_date": "2099-01-01", "limit": 80}
+    async with Client(main.mcp) as client:
+        results = [(await client.call_tool("searchFlightRoutes", args)).data for _ in range(2)]
+    assert [result["flight_count"] for result in results] == [80, 80]
+    assert all(result["requested_limit"] == 80 for result in results)
+    assert all(state.closed for _, state in searchers)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("options,expected", [({}, 200), ({"limit": 80}, 80), ({"limit": 250}, 250), ({"limit": None}, 290)])
+async def test_mcp_default_override_and_explicit_unlimited(make_searcher, monkeypatch, options, expected):
+    from fastmcp import Client, FastMCP
+    main = importlib.import_module("flight_ticket_mcp_server.main")
+    searcher, state = make_searcher([[flight(i) for i in range(1, 291)]])
+    monkeypatch.setattr(tools, "FlightRouteSearcher", lambda **k: searcher)
+    monkeypatch.setattr(main, "mcp", FastMCP("default-limit-contract"))
+    main.register_tools()
+    args = {"departure_city": "上海", "destination_city": "北京",
+            "departure_date": (date.today() + timedelta(days=7)).isoformat(), **options}
+    async with Client(main.mcp) as client:
+        data = (await client.call_tool("searchFlightRoutes", args)).data
+    assert data["flight_count"] == len(data["flights"]) == expected
+    assert data["requested_limit"] == options.get("limit", 200)
     assert state.closed

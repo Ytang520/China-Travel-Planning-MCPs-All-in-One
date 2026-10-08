@@ -24,6 +24,10 @@ English README for **[出行 MCP 统一网关](README.md)** — a single **stdio
 | [Install the gateway](cases/01-安装-mcp.md) | Token count, cost, and time for the same model with and without the post-install functional tests |
 | [Wuhan hotels: East Lake and Wuhan University, within 8 metro stops](cases/02-武汉酒店-东湖与武大.md) | Hotels collected by metro station; workbook [武汉酒店_东湖与武大8站内_20261003.xlsx](cases/武汉酒店_东湖与武大8站内_20261003.xlsx) |
 
+## Differences from existing projects
+
+How this gateway differs from several existing travel projects, and why it does not use the Fliggy API, is in the [comparison note](docs/cn-travel-mcp-comparison.zh.md) (Chinese).
+
 ## Let an agent install it
 
 Copy this into your LLM agent session:
@@ -83,6 +87,7 @@ node scripts/mcp-test.mjs config
 | `FLIGHT_MCP_BROWSER` | Browser engine for flight scraping: A=`edge` (default) / B=`chrome` |
 | `FLIGHT_MCP_BROWSER_PATH` | Optional explicit browser executable path (takes precedence over `FLIGHT_MCP_BROWSER`) |
 | `FLIGHT_MCP_HEADLESS` | Optional: `1` enables headless mode (not recommended—Ctrip whaleguard blocks it) |
+| `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY` | Minimum/maximum flight search interval in seconds, default `15` / `45`; also applies before Fliggy fallback |
 | `HOTEL_MCP_PROJECT_ROOT` | Optional path to `HotelTicketMCP` root |
 | `HOTEL_MCP_PYTHON_COMMAND` | Python executable for HotelTicketMCP (auto: usable root `.venv`, then provider `.venv`; explicit override supported) |
 | `HOTEL_MCP_BROWSER` | Browser engine for hotel scraping: `edge` (default) / `chrome` (same as flight) |
@@ -116,7 +121,7 @@ Hotel search drives a real browser that mimics human browsing and scrapes login-
 
 - Hotel tools are only enabled after explicit consent at install time (`HOTEL_MCP_CONSENT=yes`); **enabling means you accept the risk voluntarily, and the author takes no responsibility**;
 - To reduce risk, searches wait a random 15 s – 3 min interval between calls (tunable via `HOTEL_MCP_MIN_DELAY`/`HOTEL_MCP_MAX_DELAY`) and scroll with randomized steps and pauses;
-- Flight search is unaffected by hotel login state (independent fresh profile) and does not gain this rate limit.
+- Flight search uses an independent fresh profile and is unaffected by hotel login state; its own search interval defaults to a random 15–45 seconds.
 
 ### Direct and transfer routes
 
@@ -133,7 +138,7 @@ node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
 ```
 
-Defaults use Asia/Shanghai: Shanghai → Beijing flights seven days ahead; Wuhan hotels with check-in/check-out seven/nine days ahead. Optional dates: `flight YYYY-MM-DD` or `hotel checkin checkout`. Checks require nonempty meaningful records and matching metadata/counts. Empty results, login requirements and site blocks cannot pass. Flight/hotel rows from `npm run check` establish connectivity only.
+Defaults use Asia/Shanghai: Shanghai → Beijing flights seven days ahead; Wuhan hotels with check-in/check-out seven/nine days ahead. Optional dates: `flight YYYY-MM-DD [--limit N]` or `hotel checkin checkout`. Flights default to at most 200 records; use `--limit 80`, for example, to adjust the sample. Checks require nonempty meaningful records and matching metadata/counts. Empty results, login requirements and site blocks cannot pass. Flight/hotel rows from `npm run check` establish connectivity only.
 
 Browser discovery checks explicit paths, registered installations, named `shutil.which()` calls and finite common locations before one final unrestricted DrissionPage discovery attempt. Hotel shutdown/recovery supports all three platform branches and preserves login data. See the [runtime guide](docs/browser-runtime.md). Simulated macOS/Linux tests do not establish native execution.
 
@@ -195,7 +200,13 @@ For geocoding, POI search, routing, weather, and other non–fare-estimate map t
 
 ### Flight search
 
-Flight routes default to **`auto`** (equivalent to `default`): scraping **Ctrip** listings through a **minimized visible browser** (taskbar-visible; see "Browser requirements" above). Queries take 3–8 minutes and support direct flights only.
+Flight routes default to **`auto`** (equivalent to `default`): **Ctrip** is searched first, with one automatic **Fliggy website fallback** if Ctrip fails or returns no matching flights. Both use a logged-out, **minimized visible browser** (see "Browser requirements" above). Fliggy results are collected after the list finishes rendering, without scrolling; transfer recommendations are excluded. Ctrip queries typically take 3–8 minutes; fallback adds the search interval and page loading time.
+
+Flight page searches run serially within each provider process, with a random 15–45 second gap after the previous attempt finishes, including switches to Fliggy. Configure this with `FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY`. Both sources preserve time filters, `limit`, and flight fields. `data_source` reports `ctrip_web_scraping` or `fliggy_web_scraping`, `fallback_used` indicates fallback use, and `source_attempts` records each attempt's status. Fliggy fares **exclude taxes and fees**, as indicated by `price_basis` / `价格说明`; confirm the final price on the booking page. Failure to scrape both sites returns an error.
+
+Flight `limit` caps results **per query**, defaults to 200, and accepts any positive integer, including 80 or 300; 200 is not a hard maximum. Explicit null means no count limit. Calls have independent limits: two queries with `limit=80` may each return 80 flights. Fliggy fallback stays within the same query's limit. Agents pass a JSON `limit` argument to MCP; the CLI equivalent is `node scripts/mcp-test.mjs flight --limit 80`.
+
+Successful results include the Chinese source name in `data_source_name`, a readable `source_attribution`, a `source_url`, and `query_time` with a UTC offset; formatted results begin with these details. Agents must explicitly identify the actual source as **Ctrip (携程)** or **Fliggy (飞猪)** in the final answer, cite the search link and time, and state that Fliggy fares exclude taxes and fees. Attribute results from separate calls individually. Search links run fresh queries and prices may change; `last_attempted_data_source_name` in an error identifies only the site attempted.
 
 ### Hotel search
 

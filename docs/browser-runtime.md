@@ -38,7 +38,7 @@ The same rules apply to `FLIGHT_MCP_*` and `HOTEL_MCP_*`:
 
 Application discovery never enumerates or dumps PATH. It calls `shutil.which()` only for the specific browser command names. This restriction does not change ordinary subprocess environment inheritance or DrissionPage's own discovery.
 
-Both searches use DrissionPage and Ctrip web pages. `auto`/`default` flight data-source settings do not select another browser automation library. Both providers default to a visible, minimized browser and explicitly configure headless mode only when `*_HEADLESS=1`. A Linux visible session requires a working graphical display. Browser discovery cannot guarantee a website will accept headless automation, a login, or a particular browser version.
+Both searches use DrissionPage. Flight `auto`/`default` searches Ctrip first and tries the Fliggy website once if Ctrip fails or returns no matching flights; both sources use the same owned, logged-out browser. Fliggy waits for stable rendered results without scrolling. Flight page searches run serially per provider process with a default random 15–45 second gap after each attempt, including fallback (`FLIGHT_MCP_MIN_DELAY` / `FLIGHT_MCP_MAX_DELAY`). Hotel searches use Ctrip with project login cookies. Both providers default to a visible, minimized browser and explicitly configure headless mode only when `*_HEADLESS=1`. A Linux visible session requires a working graphical display. Browser discovery cannot guarantee a website will accept headless automation, a login, or a particular browser version.
 
 ## Shutdown and recovery
 
@@ -55,14 +55,14 @@ node scripts/mcp-test.mjs flight
 node scripts/mcp-test.mjs hotel
 ```
 
-The flight example is Shanghai → Beijing, seven days ahead, with `limit: 5`. It stops further scrolling after collecting five valid, unique flights that satisfy any requested time filters. Fewer flights are allowed; ordinary tool calls can omit `limit` to collect without a count cap. Results follow page collection order, and statistics cover only returned records. Flight mode prints complete results rather than a character-truncated preview. The hotel example is Wuhan, check-in seven days ahead and check-out nine days ahead, at most five hotels. Defaults use `Asia/Shanghai`, independent of host timezone. Optional dates:
+The flight example is Shanghai → Beijing, seven days ahead, with `limit: 200` by default. The limit applies independently to each query; agents can choose any positive integer, including values above 200, through the MCP `limit` argument or CLI `--limit N`. Explicit MCP null means no count limit. Ctrip stops further scrolling once enough valid, unique flights satisfy the filters; Fliggy fallback reads a stable list without scrolling and respects the same query limit. Fewer flights are allowed. Results follow page collection order, and statistics cover only returned records. Flight mode prints complete results rather than a character-truncated preview. Agents must identify the actual successful source, Ctrip (携程) or Fliggy (飞猪), using `data_source_name` / `source_attribution`, cite `source_url` and `query_time`, and retain Fliggy's taxes/fees exclusion. Attribute separate queries individually. The hotel example is Wuhan, check-in seven days ahead and check-out nine days ahead, at most five hotels. Default query dates use `Asia/Shanghai`, independent of host timezone. Optional dates and flight limit:
 
 ```text
-node scripts/mcp-test.mjs flight YYYY-MM-DD
+node scripts/mcp-test.mjs flight YYYY-MM-DD [--limit N]
 node scripts/mcp-test.mjs hotel YYYY-MM-DD YYYY-MM-DD
 ```
 
-The checks validate complete JSON/structured results, success status, source, route/city, dates, matching counts, nonempty records, and meaningful flight/hotel fields. Missing prices or fewer than five flights/hotels are allowed; exceeding the requested limit fails acceptance. Empty results, login requirements, website blocks, malformed output and count mismatches return a nonzero exit code. They do not prove the browser query works merely because MCP connected.
+The checks validate complete JSON/structured results, success status, source, route/city, dates, matching counts, nonempty records, and meaningful flight/hotel fields. Missing prices or fewer records than the requested limit are allowed; exceeding that limit fails acceptance. Empty results, login requirements, website blocks, malformed output and count mismatches return a nonzero exit code. They do not prove the browser query works merely because MCP connected.
 
 `npm run check` still runs the lightweight health check; flight/hotel health rows are connectivity-only. Run the two commands above for browser-search acceptance. Hotel live testing requires the existing explicit risk consent and a valid login. If necessary, use the existing `login` mode and complete login manually, then rerun the hotel example.
 

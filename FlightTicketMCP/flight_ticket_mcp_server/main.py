@@ -258,9 +258,18 @@ def register_tools():
         latestStartTime: Optional[int] = None,
         earliestArrivalTime: Optional[int] = None,
         latestArrivalTime: Optional[int] = None,
-        limit: Optional[Annotated[int, Field(strict=True, ge=1)]] = None,
+        limit: Annotated[Optional[int], Field(
+            strict=True, ge=1,
+            description="单次查询最多返回的有效航班数，默认200；agent可按需调整为80、300等正整数，null表示不限。各次调用独立计数，fallback不增加额度。",
+        )] = flight_search_tools.DEFAULT_FLIGHT_LIMIT,
     ):
-        """航班路线查询 - 根据出发地、目的地和出发日期查询可用航班信息。data_source_preference支持auto/default（均使用携程网页数据源，需要可见浏览器）。earliestStartTime/latestStartTime设置最早/最晚出发小时(0-23/1-24)，earliestArrivalTime/latestArrivalTime设置最早/最晚到达小时(0-23/1-24)。limit为可选正整数，达到有效航班数量上限即停止采集；省略时不设置数量上限。结果按页面采集顺序返回，价格和航司统计仅覆盖返回样本。"""
+        """航班路线查询 - 根据出发地、目的地和出发日期查询直达航班。
+
+        limit限制单次查询返回数量，默认200，agent可按需调整为80、300等正整数；显式null不限，各次调用独立计数，fallback不增加额度。
+        回复要求：agent必须在最终面向用户的回复中明确标注实际来源“携程”或“飞猪”，依据成功结果的data_source_name/source_attribution，并引用source_url、注明query_time。多次查询分别标注各组结果来源。错误结果只能说明尝试过的平台（last_attempted_data_source_name/source_attempts），不得声称已从该平台取得航班；auto/default或fallback_used不能单独证明成功来源。
+        data_source_preference支持auto/default（优先携程网页，失败或无符合条件的航班时自动尝试飞猪网页，需要可见浏览器，无需登录）。网页搜索间隔默认15–45秒，飞猪无需滚动，票价不含税费，回复时须注明此价格口径。
+        earliestStartTime/latestStartTime设置最早/最晚出发小时(0-23/1-24)，earliestArrivalTime/latestArrivalTime设置最早/最晚到达小时(0-23/1-24)。结果按页面顺序返回，价格和航司统计仅覆盖返回样本。
+        """
         logger.debug(
             f"调用航班路线查询工具: departure_city={departure_city}, destination_city={destination_city}, departure_date={departure_date}, data_source_preference={data_source_preference}, earliestStartTime={earliestStartTime}, latestStartTime={latestStartTime}, earliestArrivalTime={earliestArrivalTime}, latestArrivalTime={latestArrivalTime}"
         )
